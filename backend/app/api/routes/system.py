@@ -21,6 +21,7 @@ def get_system_status() -> SystemStatusResponse:
         llm_provider=settings.llm_provider,
         gemini_model=settings.gemini_model,
         llm_cache_enabled=settings.llm_cache_enabled,
+        dev_llm_fallback_enabled=settings.dev_llm_fallback_enabled,
         llm_cache_db_path=settings.llm_cache_db_path,
         search_planner_provider=settings.search_planner_provider,
         verified_claim_db_path=settings.verified_claim_db_path,

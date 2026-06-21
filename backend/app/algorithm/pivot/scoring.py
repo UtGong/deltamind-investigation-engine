@@ -6,8 +6,8 @@ from app.schemas.agent import EvidenceItem, PivotVerdict, StanceResult
 
 @dataclass(frozen=True)
 class PivotThresholds:
-    supported_min: float = 0.65
-    contradicted_min: float = 0.65
+    supported_min: float = 0.55
+    contradicted_min: float = 0.55
     contested_min: float = 0.55
     partial_min: float = 0.40
     low_evidence_max: float = 0.25
@@ -95,6 +95,11 @@ def score_claim(
         contradiction_score=contradiction_score,
         uncertainty_score=uncertainty_score,
     )
+
+    if verdict == VerdictLabel.SUPPORTED:
+        confidence = round(max(confidence, support_score), 4)
+    elif verdict == VerdictLabel.CONTRADICTED:
+        confidence = round(max(confidence, contradiction_score), 4)
 
     return PivotVerdict(
         claim_id=claim_id,

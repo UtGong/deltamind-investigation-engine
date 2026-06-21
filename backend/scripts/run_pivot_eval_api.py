@@ -1,0 +1,190 @@
+import argparse
+import json
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+
+def post_json(url: str, payload: dict[str, Any], timeout: int = 180) -> dict[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8")
+        try:
+            detail = json.loads(body)
+        except json.JSONDecodeError:
+            detail = {"raw_error": body}
+
+        return {
+            "error": True,
+            "status_code": error.code,
+            "detail": detail,
+        }
+
+
+def normalize_verdict(value: str | None) -> str:
+    return (value or "unknown").strip().lower()
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                rows.append(json.loads(line))
+
+    return rows
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run PIVOT evaluation cases through the local API."
+    )
+    parser.add_argument(
+        "--input",
+        default="data/eval/gold_claims.jsonl",
+        help="Gold claim JSONL file.",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/eval/predictions.jsonl",
+        help="Prediction output JSONL file.",
+    )
+    parser.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8000/api/v1",
+        help="API base URL.",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep between cases.",
+    )
+
+    args = parser.parse_args()
+
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+
+    gold_rows = load_jsonl(input_path)
+    predictions: list[dict[str, Any]] = []
+
+    correct = 0
+    completed = 0
+
+    for index, row in enumerate(gold_rows, start=1):
+        claim = row["claim"]
+        gold_verdict = normalize_verdict(row.get("gold_verdict"))
+
+        print(f"[{index}/{len(gold_rows)}] {row.get('id')}: {claim}")
+
+        case_response = post_json(
+            f"{args.base_url}/cases",
+            {
+                "input_type": "claim",
+                "input_text": claim,
+                "title": f"Eval: {row.get('id', index)}",
+            },
+        )
+
+        if case_response.get("error"):
+            prediction = {
+                **row,
+                "case_create_error": case_response,
+                "predicted_verdict": "error",
+                "correct": False,
+            }
+            predictions.append(prediction)
+            continue
+
+        case_id = case_response["case_id"]
+
+        result = post_json(f"{args.base_url}/cases/{case_id}/investigate", {})
+
+        if result.get("error") or "detail" in result:
+            prediction = {
+                **row,
+                "case_id": case_id,
+                "investigation_error": result,
+                "predicted_verdict": "error",
+                "correct": False,
+            }
+            predictions.append(prediction)
+            continue
+
+        predicted_verdict = normalize_verdict(result.get("case_verdict"))
+        is_correct = predicted_verdict == gold_verdict
+
+        completed += 1
+        correct += int(is_correct)
+
+        prediction = {
+            **row,
+            "case_id": case_id,
+            "predicted_verdict": predicted_verdict,
+            "confidence": result.get("confidence"),
+            "correct": is_correct,
+            "evidence_count": len(result.get("evidence", [])),
+            "stance_count": len(result.get("stances", [])),
+            "claim_count": len(result.get("claims", [])),
+            "verdicts": result.get("verdicts", []),
+        }
+
+        predictions.append(prediction)
+
+        print(
+            f"  predicted={predicted_verdict} "
+            f"gold={gold_verdict} "
+            f"correct={is_correct} "
+            f"confidence={result.get('confidence')}"
+        )
+
+        if args.sleep > 0:
+            time.sleep(args.sleep)
+
+    write_jsonl(output_path, predictions)
+
+    summary = {
+        "input": str(input_path),
+        "output": str(output_path),
+        "total": len(gold_rows),
+        "completed": completed,
+        "correct": correct,
+        "accuracy": round(correct / completed, 4) if completed else 0.0,
+        "errors": len([row for row in predictions if row.get("predicted_verdict") == "error"]),
+    }
+
+    summary_path = output_path.with_suffix(".summary.json")
+    summary_path.write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    print("\nSUMMARY")
+    print(json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

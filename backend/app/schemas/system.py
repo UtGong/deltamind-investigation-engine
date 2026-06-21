@@ -12,6 +12,7 @@ class SystemStatusResponse(BaseModel):
     llm_provider: str
     gemini_model: str | None = None
     llm_cache_enabled: bool
+    dev_llm_fallback_enabled: bool
     llm_cache_db_path: str
 
     search_planner_provider: str
