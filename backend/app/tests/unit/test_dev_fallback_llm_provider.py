@@ -1,6 +1,6 @@
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.dev_fallback_provider import DevFallbackLLMProvider
-from app.providers.llm.mock_provider import MockLLMProvider
+from app.providers.llm.dev_deterministic_provider import DevDeterministicLLMProvider
 from app.schemas.llm import LLMMessage, LLMRequest
 
 
@@ -14,7 +14,7 @@ class FailingLLMProvider(LLMProvider):
 def test_dev_fallback_llm_provider_returns_mock_response_after_primary_failure():
     provider = DevFallbackLLMProvider(
         primary_provider=FailingLLMProvider(),
-        fallback_provider=MockLLMProvider(),
+        fallback_provider=DevDeterministicLLMProvider(),
     )
 
     response = provider.generate(
@@ -22,7 +22,7 @@ def test_dev_fallback_llm_provider_returns_mock_response_after_primary_failure()
             messages=[
                 LLMMessage(
                     role="user",
-                    content="Create a retrieval plan for this claim.",
+                    content="Create a retrieval plan for this claim: The Boston Celtics won the 2024 NBA Finals.",
                 )
             ],
             temperature=0.0,

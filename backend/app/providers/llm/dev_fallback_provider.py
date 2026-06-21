@@ -1,5 +1,5 @@
 from app.providers.llm.base import LLMProvider
-from app.providers.llm.mock_provider import MockLLMProvider
+from app.providers.llm.dev_deterministic_provider import DevDeterministicLLMProvider
 from app.schemas.llm import LLMRequest, LLMResponse
 
 
@@ -20,7 +20,7 @@ class DevFallbackLLMProvider(LLMProvider):
         fallback_provider: LLMProvider | None = None,
     ) -> None:
         self.primary_provider = primary_provider
-        self.fallback_provider = fallback_provider or MockLLMProvider()
+        self.fallback_provider = fallback_provider or DevDeterministicLLMProvider()
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         try:

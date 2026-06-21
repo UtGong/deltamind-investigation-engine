@@ -33,6 +33,7 @@ from app.agents.report_agent import ReportAgent, ReportAgentInput
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
 from app.algorithm.pivot.scoring import score_claim
+from app.algorithm.pivot.evidence_quality import filter_evidence_items
 from app.core.config import get_settings
 from app.core.constants import CaseStatus, CostType, InputType, VerdictLabel
 from app.domain.audit.service import AuditService, audit_service
@@ -577,6 +578,39 @@ class InvestigationService:
             )
 
             claim_stances: list[StanceResult] = []
+
+            raw_claim_evidence_count = len(claim_evidence)
+            claim_evidence, evidence_quality_decisions = filter_evidence_items(
+                claim=claim,
+                evidence_items=claim_evidence,
+            )
+
+            evidence_items = [
+                evidence
+                for evidence in evidence_items
+                if evidence.claim_id != claim.claim_id
+            ] + claim_evidence
+
+            self.audit.record_agent_run(
+                case_id=case.case_id,
+                agent_name="evidence_quality_filter",
+                provider="internal_algorithm",
+                input_data={
+                    "claim_id": claim.claim_id,
+                    "raw_evidence_count": raw_claim_evidence_count,
+                },
+                output_data={
+                    "kept_evidence_count": len(claim_evidence),
+                    "decisions": evidence_quality_decisions,
+                },
+                metadata={
+                    "stage": "evidence_quality_filter",
+                    "claim_id": claim.claim_id,
+                    "raw_evidence_count": raw_claim_evidence_count,
+                    "kept_evidence_count": len(claim_evidence),
+                    "discarded_evidence_count": raw_claim_evidence_count - len(claim_evidence),
+                },
+            )
 
             for evidence in claim_evidence:
                 stance_input = LLMStanceInput(

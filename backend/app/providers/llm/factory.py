@@ -17,14 +17,14 @@ def get_llm_provider() -> LLMProvider:
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
 
+    if settings.llm_cache_enabled and provider_name != "mock":
+        provider = CachedLLMProvider(provider)
+
     if (
         settings.dev_llm_fallback_enabled
         and settings.app_env.lower().strip() in {"local", "dev", "development"}
         and provider_name != "mock"
     ):
         provider = DevFallbackLLMProvider(provider)
-
-    if settings.llm_cache_enabled and provider_name != "mock":
-        provider = CachedLLMProvider(provider)
 
     return provider
