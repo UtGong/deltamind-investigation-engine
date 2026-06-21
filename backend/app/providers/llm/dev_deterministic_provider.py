@@ -163,6 +163,7 @@ class DevDeterministicLLMProvider(LLMProvider):
                 "confidence": 0.88,
                 "reason": "Development fallback: the evidence context contains Celtics and NBA Finals language with a contradiction signal.",
                 "rationale": "Development fallback: the evidence context contains Celtics and NBA Finals language with a contradiction signal.",
+                "rationale": "Development fallback: the evidence context contains Celtics and NBA Finals language with a contradiction signal.",
             }
         elif has_celtics and has_finals and has_support_signal:
             payload = {
@@ -172,6 +173,7 @@ class DevDeterministicLLMProvider(LLMProvider):
                 "confidence": 0.92,
                 "reason": "Development fallback: the evidence context mentions the Celtics, the NBA Finals, and a win/championship signal.",
                 "rationale": "Development fallback: the evidence context mentions the Celtics, the NBA Finals, and a win/championship signal.",
+                "rationale": "Development fallback: the evidence context mentions the Celtics, the NBA Finals, and a win/championship signal.",
             }
         else:
             payload = {
@@ -180,6 +182,7 @@ class DevDeterministicLLMProvider(LLMProvider):
                 "label": "insufficient",
                 "confidence": 0.8,
                 "reason": "Development fallback: the evidence context does not contain enough specific support signal.",
+                "rationale": "Development fallback: the evidence context does not contain enough specific support signal.",
                 "rationale": "Development fallback: the evidence context does not contain enough specific support signal.",
             }
 
