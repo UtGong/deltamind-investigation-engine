@@ -32,3 +32,13 @@ latest_*.json
 .DS_Store
 .vscode/
 .idea/
+
+# Evaluation runtime outputs
+backend/data/eval/predictions.jsonl
+backend/data/eval/predictions.summary.json
+backend/data/eval/reports/
+
+# Evaluation runtime outputs
+backend/data/eval/predictions.jsonl
+backend/data/eval/predictions.summary.json
+backend/data/eval/reports/
