@@ -85,3 +85,67 @@ def test_direct_source_fetch_expands_domain_only_candidates():
     assert len(output.results) >= 1
     assert output.results[0].domain == "nba.com"
     assert "Boston Celtics won the 2024 NBA Finals" in output.results[0].snippet
+
+
+def test_direct_source_fetch_uses_dev_fixture_for_failed_2023_nba_finals_url(monkeypatch):
+    from app.agents.direct_source_fetch_agent import DirectSourceFetchAgent, DirectSourceFetchInput
+    from app.core.config import get_settings
+    from app.core.constants import ClaimType, SourceType
+    from app.schemas.agent import AtomicClaim
+    from app.schemas.search import SearchPlan, SourceCandidate
+
+    monkeypatch.setenv("DEV_LLM_FALLBACK_ENABLED", "true")
+    if hasattr(get_settings, "cache_clear"):
+        get_settings.cache_clear()
+
+    class FailedFetch:
+        error = True
+        text = ""
+        final_url = None
+        title = None
+
+    class FailingUrlFetchAgent:
+        def run(self, input_data):
+            return FailedFetch()
+
+    claim = AtomicClaim(
+        claim_id="C1",
+        claim_text="The Denver Nuggets won the 2023 NBA Finals.",
+        claim_type=ClaimType.EVENT,
+        subject="The Denver Nuggets",
+        predicate="won",
+        object="the 2023 NBA Finals",
+        confidence=1.0,
+    )
+
+    search_plan = SearchPlan(
+        claim_id="C1",
+        source_candidates=[
+            SourceCandidate(
+                name="NBA official Finals page",
+                domain="nba.com",
+                url="https://www.nba.com/playoffs/2023/nba-finals",
+                expected_source_type=SourceType.OFFICIAL,
+                rationale="Official Finals page.",
+                priority=1,
+            )
+        ],
+    )
+
+    output = DirectSourceFetchAgent(
+        url_fetch_agent=FailingUrlFetchAgent()
+    ).run(
+        DirectSourceFetchInput(
+            claim=claim,
+            search_plan=search_plan,
+        )
+    )
+
+    assert len(output.results) == 1
+    assert output.results[0].url == "https://www.nba.com/playoffs/2023/nba-finals"
+    assert "Denver Nuggets defeated the Miami Heat" in output.results[0].snippet
+    assert output.results[0].source_type == SourceType.OFFICIAL
+
+    monkeypatch.setenv("DEV_LLM_FALLBACK_ENABLED", "false")
+    if hasattr(get_settings, "cache_clear"):
+        get_settings.cache_clear()

@@ -121,3 +121,101 @@ def test_llm_stance_agent_treats_search_result_page_as_insufficient():
     )
 
     assert output.stance.stance == StanceLabel.INSUFFICIENT
+
+
+def test_llm_stance_agent_contradicts_heat_2023_winner_claim():
+    agent = LLMStanceAgent(llm_provider=DevDeterministicLLMProvider())
+
+    claim = AtomicClaim(
+        claim_id="C1",
+        claim_text="The Miami Heat won the 2023 NBA Finals.",
+        claim_type=ClaimType.EVENT,
+        subject="The Miami Heat",
+        predicate="won",
+        object="the 2023 NBA Finals",
+        confidence=1.0,
+    )
+
+    evidence = EvidenceItem(
+        evidence_id="E1",
+        claim_id="C1",
+        source_id="S1",
+        title="2023 NBA Finals | NBA.com",
+        evidence_text=(
+            "The Denver Nuggets won their first NBA championship. "
+            "The Nuggets defeated the Miami Heat in the 2023 NBA Finals."
+        ),
+        reliability=0.95,
+        specificity=0.9,
+        independence=0.7,
+        freshness=0.7,
+    )
+
+    output = agent.run(LLMStanceInput(claim=claim, evidence=evidence))
+
+    assert output.stance.stance == StanceLabel.CONTRADICTS
+    assert output.stance.confidence >= 0.9
+
+
+def test_llm_stance_agent_marks_secret_injury_claim_insufficient():
+    agent = LLMStanceAgent(llm_provider=DevDeterministicLLMProvider())
+
+    claim = AtomicClaim(
+        claim_id="C1",
+        claim_text="A secret injury caused the Boston Celtics to win the 2024 NBA Finals.",
+        claim_type=ClaimType.CAUSAL,
+        subject="A secret injury",
+        predicate="caused",
+        object="the Boston Celtics to win the 2024 NBA Finals",
+        confidence=1.0,
+    )
+
+    evidence = EvidenceItem(
+        evidence_id="E1",
+        claim_id="C1",
+        source_id="S1",
+        title="2024 NBA Finals | NBA.com",
+        evidence_text=(
+            "Celtics clinch banner 18. Boston won the 2024 NBA Finals."
+        ),
+        reliability=0.95,
+        specificity=0.9,
+        independence=0.7,
+        freshness=0.7,
+    )
+
+    output = agent.run(LLMStanceInput(claim=claim, evidence=evidence))
+
+    assert output.stance.stance == StanceLabel.INSUFFICIENT
+
+
+def test_llm_stance_agent_marks_rigging_claim_insufficient():
+    agent = LLMStanceAgent(llm_provider=DevDeterministicLLMProvider())
+
+    claim = AtomicClaim(
+        claim_id="C1",
+        claim_text="The 2024 NBA Finals were rigged by an unnamed official.",
+        claim_type=ClaimType.UNKNOWN,
+        subject="The 2024 NBA Finals",
+        predicate="were rigged by",
+        object="an unnamed official",
+        confidence=1.0,
+    )
+
+    evidence = EvidenceItem(
+        evidence_id="E1",
+        claim_id="C1",
+        source_id="S1",
+        title="2024 NBA Finals | NBA.com",
+        evidence_text=(
+            "Celtics clinch banner 18. Boston won the 2024 NBA Finals."
+        ),
+        reliability=0.95,
+        specificity=0.9,
+        independence=0.7,
+        freshness=0.7,
+    )
+
+    output = agent.run(LLMStanceInput(claim=claim, evidence=evidence))
+
+    assert output.stance.stance == StanceLabel.INSUFFICIENT
