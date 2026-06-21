@@ -32,6 +32,26 @@ def post_json(url: str, payload: dict[str, Any], timeout: int = 180) -> dict[str
             "status_code": error.code,
             "detail": detail,
         }
+    except (urllib.error.URLError, ConnectionResetError, TimeoutError, OSError) as error:
+        return {
+            "error": True,
+            "status_code": None,
+            "detail": {
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+                "url": url,
+            },
+        }
+    except (urllib.error.URLError, ConnectionResetError, TimeoutError, OSError) as error:
+        return {
+            "error": True,
+            "status_code": None,
+            "detail": {
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+                "url": url,
+            },
+        }
 
 
 def normalize_verdict(value: str | None) -> str:

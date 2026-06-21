@@ -156,8 +156,8 @@ def make_markdown_report(
     lines.append("")
     lines.append("## Source Files")
     lines.append("")
-    lines.append(f"- Summary: `{summary.get('output', '')}.summary.json`")
-    lines.append(f"- Predictions: `{summary.get('output', '')}`")
+    lines.append(f"- Summary: `{summary.get('summary_file', '')}`")
+    lines.append(f"- Predictions: `{summary.get('predictions_file', '')}`")
     lines.append("")
 
     return "\n".join(lines)
@@ -196,6 +196,8 @@ def main() -> None:
 
     predictions = load_jsonl(predictions_path)
     summary = load_json(summary_path)
+    summary["predictions_file"] = str(predictions_path)
+    summary["summary_file"] = str(summary_path)
 
     report = make_markdown_report(
         summary=summary,
