@@ -42,3 +42,9 @@ backend/data/eval/reports/
 backend/data/eval/predictions.jsonl
 backend/data/eval/predictions.summary.json
 backend/data/eval/reports/
+
+# Evaluation runtime outputs
+backend/data/eval/predictions.jsonl
+backend/data/eval/predictions.summary.json
+backend/data/eval/reports/
+backend/data/eval/eval_server.log
