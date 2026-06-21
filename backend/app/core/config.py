@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # LLM
     llm_provider: str = "mock"
+    dev_llm_fallback_enabled: bool = False
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
 
