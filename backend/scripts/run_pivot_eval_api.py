@@ -166,6 +166,38 @@ def main() -> None:
 
     write_jsonl(output_path, predictions)
 
+    label_metrics: dict[str, dict[str, int | float]] = {}
+
+    for prediction in predictions:
+        gold = normalize_verdict(prediction.get("gold_verdict"))
+        predicted = normalize_verdict(prediction.get("predicted_verdict"))
+
+        if gold not in label_metrics:
+            label_metrics[gold] = {
+                "total": 0,
+                "correct": 0,
+                "accuracy": 0.0,
+            }
+
+        label_metrics[gold]["total"] += 1
+        label_metrics[gold]["correct"] += int(predicted == gold)
+
+    for metrics in label_metrics.values():
+        total = int(metrics["total"])
+        correct_count = int(metrics["correct"])
+        metrics["accuracy"] = round(correct_count / total, 4) if total else 0.0
+
+    confusion: dict[str, dict[str, int]] = {}
+
+    for prediction in predictions:
+        gold = normalize_verdict(prediction.get("gold_verdict"))
+        predicted = normalize_verdict(prediction.get("predicted_verdict"))
+
+        if gold not in confusion:
+            confusion[gold] = {}
+
+        confusion[gold][predicted] = confusion[gold].get(predicted, 0) + 1
+
     summary = {
         "input": str(input_path),
         "output": str(output_path),
@@ -174,6 +206,8 @@ def main() -> None:
         "correct": correct,
         "accuracy": round(correct / completed, 4) if completed else 0.0,
         "errors": len([row for row in predictions if row.get("predicted_verdict") == "error"]),
+        "label_metrics": label_metrics,
+        "confusion": confusion,
     }
 
     summary_path = output_path.with_suffix(".summary.json")
