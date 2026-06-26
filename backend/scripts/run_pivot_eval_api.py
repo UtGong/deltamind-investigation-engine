@@ -157,6 +157,18 @@ def main() -> None:
         predicted_verdict = normalize_verdict(result.get("case_verdict"))
         is_correct = predicted_verdict == gold_verdict
 
+        corrections = result.get("corrections", [])
+        active_corrections = [
+            correction
+            for correction in corrections
+            if correction.get("needs_correction")
+        ]
+        corrected_claims = [
+            correction.get("corrected_claim")
+            for correction in active_corrections
+            if correction.get("corrected_claim")
+        ]
+
         completed += 1
         correct += int(is_correct)
 
@@ -169,6 +181,10 @@ def main() -> None:
             "evidence_count": len(result.get("evidence", [])),
             "stance_count": len(result.get("stances", [])),
             "claim_count": len(result.get("claims", [])),
+            "correction_count": len(active_corrections),
+            "needs_correction": bool(active_corrections),
+            "corrected_claims": corrected_claims,
+            "corrections": corrections,
             "verdicts": result.get("verdicts", []),
         }
 

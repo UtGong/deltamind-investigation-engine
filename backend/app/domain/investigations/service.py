@@ -16,6 +16,10 @@ from app.agents.llm_search_planning_agent import (
     LLMSearchPlanningAgent,
     LLMSearchPlanningInput,
 )
+from app.agents.claim_correction_agent import (
+    ClaimCorrectionAgent,
+    ClaimCorrectionInput,
+)
 from app.agents.llm_stance_agent import LLMStanceAgent, LLMStanceInput
 from app.agents.planner_source_assessment_agent import (
     PlannerSourceAssessmentAgent,
@@ -53,6 +57,7 @@ from app.providers.search.base import SearchProvider
 from app.providers.search.factory import get_free_search_provider, get_paid_search_provider
 from app.schemas.agent import EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.api import InvestigationResult
+from app.schemas.correction import ClaimCorrection
 from app.schemas.search import SearchQuery, SearchResult
 
 
@@ -193,6 +198,7 @@ class InvestigationService:
         evidence_items: list[EvidenceItem] = []
         stance_results: list[StanceResult] = []
         verdicts: list[PivotVerdict] = []
+        corrections: list[ClaimCorrection] = []
 
         for claim in claims:
             cached_record = self.verified_claims.lookup(claim)
@@ -682,6 +688,43 @@ class InvestigationService:
                 },
             )
 
+            correction_input = ClaimCorrectionInput(
+                claim=claim,
+                evidence=claim_evidence,
+                stances=claim_stances,
+                verdict=claim_verdict,
+            )
+            correction_agent = getattr(
+                self,
+                "correction_agent",
+                ClaimCorrectionAgent(),
+            )
+            correction_output = correction_agent.run(correction_input)
+            correction = correction_output.correction
+            corrections.append(correction)
+
+            self.audit.record_agent_run(
+                case_id=case.case_id,
+                agent_name=correction_agent.name,
+                provider="internal_deterministic",
+                input_data=correction_input,
+                output_data=correction_output,
+                metadata={
+                    "stage": "claim_correction",
+                    "claim_id": claim.claim_id,
+                    "needs_correction": correction.needs_correction,
+                },
+            )
+            self.audit.record_cost(
+                case_id=case.case_id,
+                cost_type=CostType.AGENT,
+                provider="internal_deterministic",
+                units=1,
+                unit_name="agent_call",
+                estimated_cost_usd=0.0,
+                metadata={"agent_name": correction_agent.name},
+            )
+
             saved_verified_claim = self.verified_claims.save_if_reusable(
                 claim=claim,
                 verdict=claim_verdict,
@@ -750,6 +793,7 @@ class InvestigationService:
             evidence=evidence_items,
             stances=stance_results,
             verdicts=verdicts,
+            corrections=corrections,
             report=report,
             agent_runs=audit_trail.agent_runs,
             cost_logs=audit_trail.cost_logs,

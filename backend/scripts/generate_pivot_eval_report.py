@@ -29,6 +29,23 @@ def verdict_icon(correct: bool) -> str:
     return "✅" if correct else "❌"
 
 
+def format_correction(row: dict[str, Any]) -> str:
+    corrected_claims = row.get("corrected_claims") or []
+    if corrected_claims:
+        return "; ".join(str(claim) for claim in corrected_claims)
+
+    corrections = row.get("corrections") or []
+    active = [
+        correction
+        for correction in corrections
+        if correction.get("needs_correction") and correction.get("corrected_claim")
+    ]
+    if active:
+        return "; ".join(str(correction["corrected_claim"]) for correction in active)
+
+    return "—"
+
+
 def make_markdown_report(
     *,
     summary: dict[str, Any],
@@ -110,8 +127,8 @@ def make_markdown_report(
     if not failed:
         lines.append("No failed cases.")
     else:
-        lines.append("| ID | Gold | Predicted | Confidence | Claim |")
-        lines.append("|---|---|---|---:|---|")
+        lines.append("| ID | Gold | Predicted | Confidence | Correction | Claim |")
+        lines.append("|---|---|---|---:|---|---|")
 
         for row in failed:
             lines.append(
@@ -122,6 +139,7 @@ def make_markdown_report(
                         escape_table_cell(row.get("gold_verdict")),
                         escape_table_cell(row.get("predicted_verdict")),
                         escape_table_cell(row.get("confidence")),
+                        escape_table_cell(format_correction(row)),
                         escape_table_cell(row.get("claim")),
                     ]
                 )
@@ -132,8 +150,8 @@ def make_markdown_report(
 
     lines.append("## All Cases")
     lines.append("")
-    lines.append("| Result | ID | Gold | Predicted | Confidence | Evidence | Stances | Claim |")
-    lines.append("|---|---|---|---|---:|---:|---:|---|")
+    lines.append("| Result | ID | Gold | Predicted | Confidence | Correction | Evidence | Stances | Claim |")
+    lines.append("|---|---|---|---|---:|---|---:|---:|---|")
 
     for row in predictions:
         lines.append(
@@ -145,6 +163,7 @@ def make_markdown_report(
                     escape_table_cell(row.get("gold_verdict")),
                     escape_table_cell(row.get("predicted_verdict")),
                     escape_table_cell(row.get("confidence")),
+                    escape_table_cell(format_correction(row)),
                     escape_table_cell(row.get("evidence_count")),
                     escape_table_cell(row.get("stance_count")),
                     escape_table_cell(row.get("claim")),

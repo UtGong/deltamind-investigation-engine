@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from app.core.constants import CaseStatus, InputType, VerdictLabel
 from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.audit import AgentRun, AuditTrail, CostLog
+from app.schemas.correction import ClaimCorrection
 
 
 class CreateCaseRequest(BaseModel):
@@ -49,6 +50,7 @@ class InvestigationResult(BaseModel):
     evidence: list[EvidenceItem]
     stances: list[StanceResult]
     verdicts: list[PivotVerdict]
+    corrections: list[ClaimCorrection] = Field(default_factory=list)
     report: InvestigationReport | None = None
 
     agent_runs: list[AgentRun] = Field(default_factory=list)
