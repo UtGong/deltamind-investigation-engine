@@ -97,3 +97,102 @@ class TrustCertificateRegistryItem(BaseModel):
     evidence_count: int = 0
     source_count: int = 0
     independence_cluster_count: int = 0
+
+
+class TrustCertificateTimelineEvent(BaseModel):
+    event_type: str
+    event_time: datetime
+    status_before: CertificateLifecycleStatus | None = None
+    status_after: CertificateLifecycleStatus
+    reason: str
+    is_reverification_event: bool = False
+    is_terminal_event: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrustCertificateStatusCard(BaseModel):
+    certificate_id: str
+    case_id: str
+    lifecycle_status: CertificateLifecycleStatus
+    status_label: str
+    action_required: str
+    overall_verdict: str
+    confidence: float
+    trust_index: float
+    evidence_graph_id: str | None = None
+    issued_at: datetime
+    updated_at: datetime | None = None
+    claim_count: int = 0
+    evidence_count: int = 0
+    source_count: int = 0
+    independence_cluster_count: int = 0
+    event_count: int = 0
+    has_been_reverified: bool = False
+    latest_event_type: str | None = None
+    latest_reverification_event_type: str | None = None
+    timeline: list[TrustCertificateTimelineEvent] = Field(default_factory=list)
+
+
+class TrustCertificateLifecycleResponse(BaseModel):
+    certificate_id: str
+    case_id: str
+    lifecycle_status: CertificateLifecycleStatus
+    issued_at: datetime
+    updated_at: datetime | None = None
+    event_count: int
+    events: list[TrustCertificateLifecycleEvent] = Field(default_factory=list)
+
+
+class TrustCertificateReverificationEventSummary(BaseModel):
+    event_type: str
+    event_time: datetime
+    status_before: CertificateLifecycleStatus | None = None
+    status_after: CertificateLifecycleStatus
+    reason: str
+    previous_verdict: str | None = None
+    fresh_verdict: str | None = None
+    verdict_changed: bool | None = None
+    previous_trust_index: float | None = None
+    fresh_trust_index: float | None = None
+    trust_drop: float | None = None
+    trust_drop_threshold: float | None = None
+    minimum_active_trust_index: float | None = None
+
+
+class TrustCertificateLatestEventSummary(BaseModel):
+    event_type: str
+    event_time: datetime
+    status_before: CertificateLifecycleStatus | None = None
+    status_after: CertificateLifecycleStatus
+    reason: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrustCertificateReverificationSummary(BaseModel):
+    certificate_id: str
+    case_id: str
+    lifecycle_status: CertificateLifecycleStatus
+    overall_verdict: str
+    confidence: float
+    trust_index: float
+    issued_at: datetime
+    updated_at: datetime | None = None
+    event_count: int
+    has_been_reverified: bool
+    latest_event: TrustCertificateLatestEventSummary | None = None
+    latest_reverification: TrustCertificateReverificationEventSummary | None = None
+
+
+class TrustCertificateDashboardSummary(BaseModel):
+    requested_limit: int
+    filters: dict[str, Any] = Field(default_factory=dict)
+    certificate_count: int
+    by_lifecycle_status: dict[str, int] = Field(default_factory=dict)
+    by_action_required: dict[str, int] = Field(default_factory=dict)
+    active_count: int = 0
+    revoked_count: int = 0
+    draft_count: int = 0
+    review_required_count: int = 0
+    reverify_available_count: int = 0
+    stable_count: int = 0
+    average_trust_index: float = 0.0
