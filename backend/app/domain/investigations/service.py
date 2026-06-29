@@ -37,6 +37,7 @@ from app.agents.report_agent import ReportAgent, ReportAgentInput
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
 from app.algorithm.pivot.scoring import score_claim
+from app.domain.source_reliability.service import SourceReliabilityService
 from app.algorithm.pivot.evidence_quality import filter_evidence_items
 from app.core.config import get_settings
 from app.core.constants import CaseStatus, CostType, InputType, VerdictLabel
@@ -664,6 +665,28 @@ class InvestigationService:
                     estimated_cost_usd=stance_output.raw_response.estimated_cost_usd,
                     metadata={"agent_name": self.stance_agent.name},
                 )
+
+            source_reliability_service = getattr(
+                self,
+                "source_reliability_service",
+                SourceReliabilityService(),
+            )
+            source_reliability_service.apply_to_evidence_items(
+                evidence_items=claim_evidence,
+                claim_type=getattr(claim.claim_type, "value", str(claim.claim_type)),
+                topic="eval:nba",
+            )
+
+            source_reliability_service = getattr(
+                self,
+                "source_reliability_service",
+                SourceReliabilityService(),
+            )
+            source_reliability_service.apply_to_evidence_items(
+                evidence_items=claim_evidence,
+                claim_type=getattr(claim.claim_type, "value", str(claim.claim_type)),
+                topic="eval:nba",
+            )
 
             claim_verdict = score_claim(
                 claim_id=claim.claim_id,

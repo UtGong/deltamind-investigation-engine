@@ -50,6 +50,10 @@ class EvidenceItem(BaseModel):
     freshness: float = Field(default=0.5, ge=0.0, le=1.0)
     specificity: float = Field(default=0.5, ge=0.0, le=1.0)
 
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
 
 class StanceResult(BaseModel):
     claim_id: str

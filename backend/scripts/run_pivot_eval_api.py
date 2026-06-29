@@ -169,6 +169,33 @@ def main() -> None:
             if correction.get("corrected_claim")
         ]
 
+        compact_evidence = [
+            {
+                "evidence_id": evidence.get("evidence_id"),
+                "claim_id": evidence.get("claim_id"),
+                "source_id": evidence.get("source_id"),
+                "url": evidence.get("url"),
+                "title": evidence.get("title"),
+                "reliability": evidence.get("reliability"),
+                "specificity": evidence.get("specificity"),
+                "independence": evidence.get("independence"),
+                "freshness": evidence.get("freshness"),
+                "metadata": evidence.get("metadata", {}),
+            }
+            for evidence in result.get("evidence", [])
+        ]
+
+        compact_stances = [
+            {
+                "claim_id": stance.get("claim_id"),
+                "evidence_id": stance.get("evidence_id"),
+                "stance": stance.get("stance"),
+                "confidence": stance.get("confidence"),
+                "reason": stance.get("reason"),
+            }
+            for stance in result.get("stances", [])
+        ]
+
         completed += 1
         correct += int(is_correct)
 
@@ -185,6 +212,8 @@ def main() -> None:
             "needs_correction": bool(active_corrections),
             "corrected_claims": corrected_claims,
             "corrections": corrections,
+            "evidence": compact_evidence,
+            "stances": compact_stances,
             "verdicts": result.get("verdicts", []),
         }
 
