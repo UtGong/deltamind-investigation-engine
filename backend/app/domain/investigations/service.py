@@ -38,10 +38,13 @@ from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidence
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
 from app.algorithm.pivot.scoring import score_claim
 from app.domain.source_reliability.service import SourceReliabilityService
+from app.domain.source_independence.service import SourceIndependenceService
 from app.algorithm.pivot.evidence_quality import filter_evidence_items
 from app.core.config import get_settings
 from app.core.constants import CaseStatus, CostType, InputType, VerdictLabel
 from app.domain.audit.service import AuditService, audit_service
+from app.domain.evidence_graph.service import EvidenceGraphBuilder
+from app.domain.trust_certificates.service import TrustCertificateBuilder
 from app.domain.budget.search_budget import SearchBudgetController
 from app.domain.cases.models import utc_now
 from app.domain.cases.repository import CaseRepository, case_repository
@@ -677,15 +680,13 @@ class InvestigationService:
                 topic="eval:nba",
             )
 
-            source_reliability_service = getattr(
+            source_independence_service = getattr(
                 self,
-                "source_reliability_service",
-                SourceReliabilityService(),
+                "source_independence_service",
+                SourceIndependenceService(),
             )
-            source_reliability_service.apply_to_evidence_items(
+            source_independence_service.apply_to_evidence_items(
                 evidence_items=claim_evidence,
-                claim_type=getattr(claim.claim_type, "value", str(claim.claim_type)),
-                topic="eval:nba",
             )
 
             claim_verdict = score_claim(
@@ -807,6 +808,24 @@ class InvestigationService:
 
         audit_trail = self.audit.get_trail(case.case_id)
 
+        evidence_graph = EvidenceGraphBuilder().build(
+            case_id=case.case_id,
+            claims=claims,
+            evidence_items=evidence_items,
+            stance_results=stance_results,
+            verdicts=verdicts,
+        )
+
+        trust_certificate = TrustCertificateBuilder().build(
+            case_id=case.case_id,
+            overall_verdict=getattr(case_verdict, 'value', str(case_verdict)),
+            confidence=case_confidence,
+            claims=claims,
+            evidence_items=evidence_items,
+            verdicts=verdicts,
+            evidence_graph=evidence_graph,
+        )
+
         result = InvestigationResult(
             case_id=case.case_id,
             status=CaseStatus.COMPLETED,
@@ -817,6 +836,8 @@ class InvestigationService:
             stances=stance_results,
             verdicts=verdicts,
             corrections=corrections,
+            evidence_graph=evidence_graph,
+            trust_certificate=trust_certificate,
             report=report,
             agent_runs=audit_trail.agent_runs,
             cost_logs=audit_trail.cost_logs,

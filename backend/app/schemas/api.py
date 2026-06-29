@@ -4,6 +4,8 @@ from app.core.constants import CaseStatus, InputType, VerdictLabel
 from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.audit import AgentRun, AuditTrail, CostLog
 from app.schemas.correction import ClaimCorrection
+from app.schemas.evidence_graph import EvidenceGraph
+from app.schemas.trust_certificate import TrustCertificate
 
 
 class CreateCaseRequest(BaseModel):
@@ -51,6 +53,8 @@ class InvestigationResult(BaseModel):
     stances: list[StanceResult]
     verdicts: list[PivotVerdict]
     corrections: list[ClaimCorrection] = Field(default_factory=list)
+    evidence_graph: EvidenceGraph | None = None
+    trust_certificate: TrustCertificate | None = None
     report: InvestigationReport | None = None
 
     agent_runs: list[AgentRun] = Field(default_factory=list)

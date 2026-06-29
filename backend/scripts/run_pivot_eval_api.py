@@ -174,6 +174,7 @@ def main() -> None:
                 "evidence_id": evidence.get("evidence_id"),
                 "claim_id": evidence.get("claim_id"),
                 "source_id": evidence.get("source_id"),
+                "independence_group": evidence.get("independence_group"),
                 "url": evidence.get("url"),
                 "title": evidence.get("title"),
                 "reliability": evidence.get("reliability"),
