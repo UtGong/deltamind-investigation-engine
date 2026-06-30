@@ -196,3 +196,15 @@ class TrustCertificateDashboardSummary(BaseModel):
     reverify_available_count: int = 0
     stable_count: int = 0
     average_trust_index: float = 0.0
+
+
+class TrustCertificateLifecycleActionRequest(BaseModel):
+    reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class TrustCertificateReverificationRequest(BaseModel):
+    reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    trust_drop_threshold: float = 0.15
+    minimum_active_trust_index: float = 0.5

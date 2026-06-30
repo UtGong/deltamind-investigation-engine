@@ -8,6 +8,8 @@ from app.schemas.trust_certificate import (
     TrustCertificate,
     TrustCertificateDashboardSummary,
     TrustCertificateLifecycleResponse,
+    TrustCertificateLifecycleActionRequest,
+    TrustCertificateReverificationRequest,
     TrustCertificateReverificationSummary,
     TrustCertificateLatestEventSummary,
     TrustCertificateReverificationEventSummary,
@@ -232,16 +234,14 @@ def get_trust_certificate_reverification_summary(case_id: str):
     )
 
 
-@router.post("/{case_id}/simulate-downgrade")
-def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = None):
+@router.post("/{case_id}/simulate-downgrade", response_model=TrustCertificate)
+def simulate_trust_certificate_downgrade(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
-    payload = payload or {}
-    metadata = payload.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
+    payload = payload or TrustCertificateLifecycleActionRequest()
+    metadata = payload.metadata or {}
 
-    reason = payload.get("reason") or "Simulated downgrade caused by later conflicting evidence."
+    reason = payload.reason or "Simulated downgrade caused by later conflicting evidence."
 
     return trust_certificate_lifecycle.simulate_downgrade(
         trust_certificate,
@@ -253,16 +253,14 @@ def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = No
     )
 
 
-@router.post("/{case_id}/downgrade")
-def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
+@router.post("/{case_id}/downgrade", response_model=TrustCertificate)
+def downgrade_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
-    payload = payload or {}
-    metadata = payload.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
+    payload = payload or TrustCertificateLifecycleActionRequest()
+    metadata = payload.metadata or {}
 
-    reason = payload.get("reason") or "Certificate downgraded after re-verification."
+    reason = payload.reason or "Certificate downgraded after re-verification."
 
     downgraded_certificate = trust_certificate_lifecycle.simulate_downgrade(
         trust_certificate,
@@ -280,16 +278,14 @@ def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
     )
 
 
-@router.post("/{case_id}/reactivate")
-def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
+@router.post("/{case_id}/reactivate", response_model=TrustCertificate)
+def reactivate_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
-    payload = payload or {}
-    metadata = payload.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
+    payload = payload or TrustCertificateLifecycleActionRequest()
+    metadata = payload.metadata or {}
 
-    reason = payload.get("reason") or "Certificate reactivated after successful re-verification."
+    reason = payload.reason or "Certificate reactivated after successful re-verification."
 
     reactivated_certificate = trust_certificate_lifecycle.reactivate_certificate(
         trust_certificate,
@@ -307,18 +303,16 @@ def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
     )
 
 
-@router.post("/{case_id}/reverify")
-def reverify_trust_certificate(case_id: str, payload: dict | None = None):
+@router.post("/{case_id}/reverify", response_model=TrustCertificate)
+def reverify_trust_certificate(case_id: str, payload: TrustCertificateReverificationRequest | None = None):
     previous_certificate = _get_trust_certificate_or_404(case_id)
 
-    payload = payload or {}
-    metadata = payload.get("metadata") or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
+    payload = payload or TrustCertificateReverificationRequest()
+    metadata = payload.metadata or {}
 
-    reason = payload.get("reason") or "Certificate re-verified by rerunning the investigation."
-    trust_drop_threshold = float(payload.get("trust_drop_threshold", 0.15))
-    minimum_active_trust_index = float(payload.get("minimum_active_trust_index", 0.5))
+    reason = payload.reason or "Certificate re-verified by rerunning the investigation."
+    trust_drop_threshold = float(payload.trust_drop_threshold)
+    minimum_active_trust_index = float(payload.minimum_active_trust_index)
 
     fresh_result = investigation_service.investigate_case(case_id)
     fresh_certificate = fresh_result.trust_certificate
