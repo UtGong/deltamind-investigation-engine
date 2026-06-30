@@ -25,6 +25,7 @@ The recent status-card and dashboard-summary endpoints support:
 ```text
 lifecycle_status=active|draft|revoked
 action_required=none|reverify_available|review_required|issue_certificate
+overall_verdict=supported|contradicted|partial|uncertain
 min_trust_index=0.6
 has_been_reverified=true|false
 ```

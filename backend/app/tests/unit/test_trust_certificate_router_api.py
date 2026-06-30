@@ -348,3 +348,74 @@ def test_dashboard_summary_filters(monkeypatch):
     assert summary["revoked_count"] == 0
     assert summary["filters"]["lifecycle_status"] == "active"
     assert summary["average_trust_index"] == 0.75
+
+
+def test_recent_status_cards_filters_by_overall_verdict(monkeypatch):
+    contradicted_one = _make_certificate_with_status(
+        certificate_id="cert_contradicted_one",
+        case_id="case_contradicted_one",
+        lifecycle_status="active",
+        trust_index=0.8,
+        reverified=True,
+    )
+
+    contradicted_two = _make_certificate_with_status(
+        certificate_id="cert_contradicted_two",
+        case_id="case_contradicted_two",
+        lifecycle_status="active",
+        trust_index=0.7,
+        reverified=False,
+    )
+
+    supported = _make_certificate_with_status(
+        certificate_id="cert_supported",
+        case_id="case_supported",
+        lifecycle_status="active",
+        trust_index=0.9,
+        reverified=False,
+    ).model_copy(update={"overall_verdict": "supported"})
+
+    certificates = {
+        "case_contradicted_one": contradicted_one,
+        "case_contradicted_two": contradicted_two,
+        "case_supported": supported,
+    }
+
+    monkeypatch.setattr(
+        trust_certificates_route,
+        "investigation_service",
+        FakeMultiInvestigationService(certificates),
+    )
+    monkeypatch.setattr(
+        trust_certificates_route,
+        "trust_certificate_registry",
+        FakeMultiRegistry(list(certificates.keys())),
+    )
+
+    client = TestClient(app)
+
+    cards_response = client.get(
+        "/api/v1/trust-certificates/recent/status-cards"
+        "?limit=10&overall_verdict=contradicted"
+    )
+    assert cards_response.status_code == 200
+
+    cards = cards_response.json()
+    assert len(cards) == 2
+    assert {card["overall_verdict"] for card in cards} == {"contradicted"}
+    assert {card["certificate_id"] for card in cards} == {
+        "cert_contradicted_one",
+        "cert_contradicted_two",
+    }
+
+    summary_response = client.get(
+        "/api/v1/trust-certificates/recent/dashboard-summary"
+        "?limit=10&overall_verdict=contradicted"
+    )
+    assert summary_response.status_code == 200
+
+    summary = summary_response.json()
+    assert summary["certificate_count"] == 2
+    assert summary["filters"]["overall_verdict"] == "contradicted"
+    assert summary["active_count"] == 2
+    assert summary["average_trust_index"] == 0.75

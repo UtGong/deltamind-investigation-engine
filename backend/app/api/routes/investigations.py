@@ -49,7 +49,7 @@ def get_evidence_graph(case_id: str):
     return evidence_graph
 
 
-@router.get("/{case_id}/trust-certificate")
+@router.get("/{case_id}/trust-certificate", deprecated=True)
 def get_trust_certificate(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -71,12 +71,12 @@ def list_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 
 
-@router.get("/trust-certificates/recent")
+@router.get("/trust-certificates/recent", deprecated=True)
 def list_recent_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 
 
-@router.post("/{case_id}/trust-certificate/simulate-downgrade")
+@router.post("/{case_id}/trust-certificate/simulate-downgrade", deprecated=True)
 def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -108,7 +108,7 @@ def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = No
     )
 
 
-@router.post("/{case_id}/trust-certificate/downgrade")
+@router.post("/{case_id}/trust-certificate/downgrade", deprecated=True)
 def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -146,7 +146,7 @@ def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
     )
 
 
-@router.get("/{case_id}/trust-certificate/lifecycle")
+@router.get("/{case_id}/trust-certificate/lifecycle", deprecated=True)
 def get_trust_certificate_lifecycle(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -171,7 +171,7 @@ def get_trust_certificate_lifecycle(case_id: str):
     }
 
 
-@router.post("/{case_id}/trust-certificate/reactivate")
+@router.post("/{case_id}/trust-certificate/reactivate", deprecated=True)
 def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -209,7 +209,7 @@ def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
     )
 
 
-@router.post("/{case_id}/trust-certificate/reverify")
+@router.post("/{case_id}/trust-certificate/reverify", deprecated=True)
 def reverify_trust_certificate(case_id: str, payload: dict | None = None):
     previous_result = investigation_service.get_result(case_id)
     previous_certificate = previous_result.trust_certificate
@@ -266,7 +266,7 @@ def reverify_trust_certificate(case_id: str, payload: dict | None = None):
     )
 
 
-@router.get("/{case_id}/trust-certificate/reverification-summary")
+@router.get("/{case_id}/trust-certificate/reverification-summary", deprecated=True)
 def get_trust_certificate_reverification_summary(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -330,7 +330,7 @@ def get_trust_certificate_reverification_summary(case_id: str):
     }
 
 
-@router.get("/{case_id}/trust-certificate/status-card")
+@router.get("/{case_id}/trust-certificate/status-card", deprecated=True)
 def get_trust_certificate_status_card(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
@@ -347,7 +347,7 @@ def get_trust_certificate_status_card(case_id: str):
     return build_trust_certificate_status_card(trust_certificate)
 
 
-@router.get("/trust-certificates/recent/status-cards")
+@router.get("/trust-certificates/recent/status-cards", deprecated=True)
 def list_recent_trust_certificate_status_cards(limit: int = 20):
     registry_items = trust_certificate_registry.list_recent(limit=limit)
     cards = []
@@ -367,7 +367,7 @@ def list_recent_trust_certificate_status_cards(limit: int = 20):
     return cards
 
 
-@router.get("/trust-certificates/recent/dashboard-summary")
+@router.get("/trust-certificates/recent/dashboard-summary", deprecated=True)
 def get_recent_trust_certificate_dashboard_summary(limit: int = 20):
     registry_items = trust_certificate_registry.list_recent(limit=limit)
     cards = []

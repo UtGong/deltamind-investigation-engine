@@ -45,6 +45,7 @@ def _recent_cards(
     *,
     lifecycle_status: str | None = None,
     action_required: str | None = None,
+    overall_verdict: str | None = None,
     min_trust_index: float | None = None,
     has_been_reverified: bool | None = None,
 ):
@@ -62,6 +63,9 @@ def _recent_cards(
             continue
 
         if action_required is not None and str(card.action_required) != action_required:
+            continue
+
+        if overall_verdict is not None and str(card.overall_verdict) != overall_verdict:
             continue
 
         if min_trust_index is not None and float(card.trust_index or 0.0) < min_trust_index:
@@ -88,6 +92,7 @@ def list_recent_trust_certificate_status_cards(
     limit: int = 20,
     lifecycle_status: str | None = None,
     action_required: str | None = None,
+    overall_verdict: str | None = None,
     min_trust_index: float | None = None,
     has_been_reverified: bool | None = None,
 ):
@@ -95,6 +100,7 @@ def list_recent_trust_certificate_status_cards(
         limit=limit,
         lifecycle_status=lifecycle_status,
         action_required=action_required,
+        overall_verdict=overall_verdict,
         min_trust_index=min_trust_index,
         has_been_reverified=has_been_reverified,
     )
@@ -105,6 +111,7 @@ def get_recent_trust_certificate_dashboard_summary(
     limit: int = 20,
     lifecycle_status: str | None = None,
     action_required: str | None = None,
+    overall_verdict: str | None = None,
     min_trust_index: float | None = None,
     has_been_reverified: bool | None = None,
 ):
@@ -112,6 +119,7 @@ def get_recent_trust_certificate_dashboard_summary(
         limit=limit,
         lifecycle_status=lifecycle_status,
         action_required=action_required,
+        overall_verdict=overall_verdict,
         min_trust_index=min_trust_index,
         has_been_reverified=has_been_reverified,
     )
@@ -138,6 +146,7 @@ def get_recent_trust_certificate_dashboard_summary(
         filters={
             "lifecycle_status": lifecycle_status,
             "action_required": action_required,
+            "overall_verdict": overall_verdict,
             "min_trust_index": min_trust_index,
             "has_been_reverified": has_been_reverified,
         },
