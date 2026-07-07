@@ -7,7 +7,7 @@ from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceRes
 def test_trust_certificate_builder_creates_certificate_summary():
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Dallas Mavericks won the 2024 NBA Finals.",
+        claim_text="The Team Silver won the 2024 Example Final.",
         claim_type=ClaimType.UNKNOWN,
         confidence=0.9,
     )
@@ -15,18 +15,18 @@ def test_trust_certificate_builder_creates_certificate_summary():
     evidence = EvidenceItem(
         evidence_id="E1",
         claim_id="C1",
-        source_id="source_nba",
-        url="https://www.nba.com/playoffs/2024/nba-finals",
-        title="2024 NBA Finals",
-        evidence_text="The Boston Celtics defeated the Dallas Mavericks.",
+        source_id="source_example",
+        url="https://www.example.org/playoffs/2024/example-final",
+        title="2024 Example Final",
+        evidence_text="The Team Green defeated the Team Silver.",
         reliability=0.8077,
         independence=0.85,
-        independence_group="domain:nba.com",
+        independence_group="domain:example.org",
         freshness=0.8,
         specificity=0.9,
         metadata={
             "reliability_source": "learned_source_reliability",
-            "reliability_domain": "nba.com",
+            "reliability_domain": "example.org",
             "independence_source": "common_origin_cluster_v0",
             "corroboration_discount": 0.15,
         },
@@ -82,6 +82,6 @@ def test_trust_certificate_builder_creates_certificate_summary():
     assert certificate.summary["independence_cluster_count"] == 1
 
     assert certificate.claims[0].verdict == "contradicted"
-    assert certificate.sources[0].domain == "nba.com"
+    assert certificate.sources[0].domain == "example.org"
     assert certificate.sources[0].reliability_source == "learned_source_reliability"
-    assert certificate.independence_clusters[0].cluster_id == "domain:nba.com"
+    assert certificate.independence_clusters[0].cluster_id == "domain:example.org"

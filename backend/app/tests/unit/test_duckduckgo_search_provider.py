@@ -13,9 +13,9 @@ class FakeDDGSClient:
 
         return [
             {
-                "title": "Boston Celtics win 2024 NBA Finals",
-                "href": "https://www.nba.com/news/boston-celtics-win-2024-nba-finals",
-                "body": "The Celtics defeated the Mavericks to win the 2024 NBA Finals.",
+                "title": "Team Green win 2024 Example Final",
+                "href": "https://www.example.org/news/boston-celtics-win-2024-example-final",
+                "body": "The Team Green defeated the Team Silver to win the 2024 Example Final.",
             }
         ]
 
@@ -27,14 +27,14 @@ class EmptyThenResultDDGSClient:
     def text(self, query, max_results):
         self.calls.append(query)
 
-        if query.startswith("site:nba.com"):
+        if query.startswith("site:example.org"):
             return []
 
         return [
             {
-                "title": "Boston Celtics win 2024 NBA Finals",
-                "href": "https://www.nba.com/news/boston-celtics-win-2024-nba-finals",
-                "body": "The Celtics defeated the Mavericks to win the 2024 NBA Finals.",
+                "title": "Team Green win 2024 Example Final",
+                "href": "https://www.example.org/news/boston-celtics-win-2024-example-final",
+                "body": "The Team Green defeated the Team Silver to win the 2024 Example Final.",
             }
         ]
 
@@ -43,11 +43,11 @@ def make_query() -> SearchQuery:
     return SearchQuery(
         query_id="query_1",
         claim_id="claim_1",
-        query="Boston Celtics won 2024 NBA Finals",
+        query="Team Green won 2024 Example Final",
         purpose="Find official confirmation.",
         cost_tier="free",
         expected_source_type=SourceType.OFFICIAL,
-        target_domains=["nba.com"],
+        target_domains=["example.org"],
         provider="duckduckgo",
     )
 
@@ -64,10 +64,10 @@ def test_duckduckgo_search_provider_returns_search_results():
 
     assert len(results) == 1
     assert results[0].query_id == "query_1"
-    assert results[0].domain == "nba.com"
+    assert results[0].domain == "example.org"
     assert results[0].source_type == SourceType.UNKNOWN
-    assert "Celtics" in results[0].snippet
-    assert fake_client.calls[0].startswith("site:nba.com")
+    assert "Team Green" in results[0].snippet
+    assert fake_client.calls[0].startswith("site:example.org")
 
 
 def test_duckduckgo_search_provider_falls_back_to_plain_query():
@@ -82,5 +82,5 @@ def test_duckduckgo_search_provider_falls_back_to_plain_query():
 
     assert len(results) == 1
     assert len(fake_client.calls) >= 2
-    assert fake_client.calls[0].startswith("site:nba.com")
-    assert fake_client.calls[1] == "Boston Celtics won 2024 NBA Finals"
+    assert fake_client.calls[0].startswith("site:example.org")
+    assert fake_client.calls[1] == "Team Green won 2024 Example Final"

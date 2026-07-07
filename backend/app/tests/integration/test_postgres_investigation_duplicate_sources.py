@@ -37,7 +37,7 @@ def test_postgres_investigation_materialization_dedupes_sources():
         CaseRecord(
             case_id=case_id,
             input_type=InputType.CLAIM,
-            input_text="The Boston Celtics won the 2024 NBA Finals.",
+            input_text="The Team Green won the 2024 Example Final.",
             title="Duplicate source materialization test",
             status=CaseStatus.CREATED,
             created_at=now,
@@ -47,7 +47,7 @@ def test_postgres_investigation_materialization_dedupes_sources():
 
     claim = AtomicClaim(
         claim_id="claim_duplicate_sources_test",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.RESULT,
         confidence=0.95,
     )
@@ -55,10 +55,10 @@ def test_postgres_investigation_materialization_dedupes_sources():
     evidence_1 = EvidenceItem(
         evidence_id="evidence_duplicate_source_1",
         claim_id=claim.claim_id,
-        source_id="source_nba_com",
-        url="https://www.nba.com/search?query=Boston+Celtics",
-        title="NBA Search",
-        evidence_text="The Boston Celtics won the 2024 NBA Finals.",
+        source_id="source_example_com",
+        url="https://www.example.org/search?query=Boston+Team Green",
+        title="Example Search",
+        evidence_text="The Team Green won the 2024 Example Final.",
         reliability=0.9,
         specificity=0.9,
     )
@@ -66,10 +66,10 @@ def test_postgres_investigation_materialization_dedupes_sources():
     evidence_2 = EvidenceItem(
         evidence_id="evidence_duplicate_source_2",
         claim_id=claim.claim_id,
-        source_id="source_nba_com",
-        url="https://www.nba.com/search?search=Boston+Celtics",
-        title="NBA Search",
-        evidence_text="Boston won the 2024 NBA Finals.",
+        source_id="source_example_com",
+        url="https://www.example.org/search?search=Boston+Team Green",
+        title="Example Search",
+        evidence_text="Boston won the 2024 Example Final.",
         reliability=0.95,
         specificity=0.85,
     )
@@ -119,7 +119,7 @@ def test_postgres_investigation_materialization_dedupes_sources():
     with SessionLocal() as session:
         sources = (
             session.query(SourceRecord)
-            .filter(SourceRecord.source_id == "source_nba_com")
+            .filter(SourceRecord.source_id == "source_example_com")
             .all()
         )
         evidence_rows = (

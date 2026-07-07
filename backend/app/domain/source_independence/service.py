@@ -76,7 +76,7 @@ def is_official_like_domain(domain: str | None) -> bool:
         or domain.endswith(".edu")
         or domain
         in {
-            "nba.com",
+            "example.org",
             "fifa.com",
             "olympics.com",
             "mlb.com",

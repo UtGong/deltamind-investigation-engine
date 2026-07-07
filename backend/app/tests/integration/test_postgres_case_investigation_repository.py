@@ -34,7 +34,7 @@ def test_postgres_case_and_investigation_repository_roundtrip_when_database_conn
     case = CaseRecord(
         case_id=case_id,
         input_type=InputType.CLAIM,
-        input_text="The Boston Celtics won the 2024 NBA Finals.",
+        input_text="The Team Green won the 2024 Example Final.",
         title="Postgres case test",
         status=CaseStatus.CREATED,
         created_at=now,

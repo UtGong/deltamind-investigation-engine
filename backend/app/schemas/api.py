@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.core.constants import CaseStatus, InputType, VerdictLabel
@@ -20,6 +22,12 @@ class CaseResponse(BaseModel):
     input_type: InputType
     input_text: str
     status: CaseStatus
+
+
+class AsyncInvestigationResponse(BaseModel):
+    case_id: str
+    status: CaseStatus
+    message: str
 
 
 class ClaimFinding(BaseModel):
@@ -59,6 +67,32 @@ class InvestigationResult(BaseModel):
 
     agent_runs: list[AgentRun] = Field(default_factory=list)
     cost_logs: list[CostLog] = Field(default_factory=list)
+
+
+class VerificationError(BaseModel):
+    message: str
+    case_id: str
+    stage: str | None = None
+    agent_name: str | None = None
+    error_type: str | None = None
+    error_message: str | None = None
+    upstream_status: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class VerificationStateResponse(BaseModel):
+    case_id: str
+    case_available: bool
+    case_status: str
+    investigation_available: bool
+    certificate_available: bool
+    evidence_graph_available: bool
+    error_available: bool
+    case: CaseResponse
+    investigation: InvestigationResult | None = None
+    trust_certificate: TrustCertificate | None = None
+    evidence_graph: EvidenceGraph | None = None
+    error: VerificationError | None = None
 
 
 class AuditTrailResponse(AuditTrail):

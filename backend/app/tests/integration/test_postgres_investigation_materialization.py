@@ -39,7 +39,7 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
         CaseRecord(
             case_id=case_id,
             input_type=InputType.CLAIM,
-            input_text="The Boston Celtics won the 2024 NBA Finals.",
+            input_text="The Team Green won the 2024 Example Final.",
             title="Materialization test",
             status=CaseStatus.CREATED,
             created_at=now,
@@ -49,11 +49,11 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
 
     claim = AtomicClaim(
         claim_id="claim_materialization_test",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.RESULT,
-        subject="Boston Celtics",
+        subject="Team Green",
         predicate="won",
-        object="2024 NBA Finals",
+        object="2024 Example Final",
         confidence=0.95,
     )
 
@@ -61,9 +61,9 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
         evidence_id="evidence_materialization_test",
         claim_id=claim.claim_id,
         source_id="source_materialization_test",
-        url="https://www.nba.com/news/celtics-win-2024-nba-finals",
-        title="Celtics win 2024 NBA Finals",
-        evidence_text="The Boston Celtics defeated the Dallas Mavericks to win the 2024 NBA Finals.",
+        url="https://www.example.org/news/celtics-win-2024-example-final",
+        title="Team Green win 2024 Example Final",
+        evidence_text="The Team Green defeated the Team Silver to win the 2024 Example Final.",
         reliability=0.9,
         independence=0.8,
         freshness=0.7,
@@ -131,7 +131,7 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
 
         assert db_source is not None
         assert db_source.source_id == evidence.source_id
-        assert db_source.domain == "www.nba.com"
+        assert db_source.domain == "www.example.org"
 
         assert db_evidence is not None
         assert db_evidence.case_id == case_id

@@ -9,9 +9,9 @@ class FakeTavilyClient:
             "query": query,
             "results": [
                 {
-                    "title": "NBA Official Result",
-                    "url": "https://www.nba.com/game/example",
-                    "content": "Official NBA result content.",
+                    "title": "Official Result",
+                    "url": "https://www.example.org/game/example",
+                    "content": "Official official result content.",
                     "score": 0.91,
                 }
             ],
@@ -32,7 +32,7 @@ def test_tavily_search_provider_maps_results_without_source_judgment():
 
     assert len(results) == 1
     assert results[0].result_id == "query_1_tavily_result_1"
-    assert results[0].domain == "nba.com"
+    assert results[0].domain == "example.org"
 
     # Provider retrieves. It should not decide authority.
     assert results[0].source_type == SourceType.UNKNOWN

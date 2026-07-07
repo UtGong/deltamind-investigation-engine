@@ -40,8 +40,8 @@ _BOILERPLATE_TERMS = {
 
 _LOW_INFORMATION_TITLES = {
     "search",
-    "search | nba.com",
-    "nba on espn - scores, stats and highlights",
+    "search | example.org",
+    "example on espn - scores, stats and highlights",
 }
 
 

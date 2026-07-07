@@ -4,6 +4,7 @@ from app.providers.llm.cached_provider import CachedLLMProvider
 from app.providers.llm.dev_fallback_provider import DevFallbackLLMProvider
 from app.providers.llm.gemini_provider import GeminiLLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
+from app.providers.llm.ollama_provider import OllamaLLMProvider
 
 
 def get_llm_provider() -> LLMProvider:
@@ -12,6 +13,8 @@ def get_llm_provider() -> LLMProvider:
 
     if provider_name == "gemini":
         provider: LLMProvider = GeminiLLMProvider()
+    elif provider_name == "ollama":
+        provider = OllamaLLMProvider()
     elif provider_name == "mock":
         provider = MockLLMProvider()
     else:

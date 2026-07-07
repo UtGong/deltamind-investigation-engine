@@ -62,22 +62,22 @@ class LLMSearchPlanningAgent(
                         "8. Paid search should be requested only when free/direct retrieval is unlikely to be enough.\n"
                         "9. For query.provider, use configured_free_provider for free queries and configured_paid_provider for paid queries.\n"
                         "10. Do not use provider names like mock unless the user explicitly asks for mock mode.\n\n"
-                        "Good source_candidate examples:\n"
+                        "Good source_candidate example when an exact source is known:\n"
                         "{\n"
-                        '  "name": "NBA official news article",\n'
-                        '  "domain": "nba.com",\n'
-                        '  "url": "https://www.nba.com/news/boston-celtics-win-2024-nba-finals",\n'
+                        '  "name": "Official organization announcement",\n'
+                        '  "domain": "example.org",\n'
+                        '  "url": "https://example.org/news/source-article",\n'
                         '  "expected_source_type": "official",\n'
-                        '  "rationale": "Official league article likely containing the result.",\n'
+                        '  "rationale": "Official source likely containing the relevant evidence.",\n'
                         '  "priority": 1\n'
                         "}\n\n"
                         "If you only know the domain, do this:\n"
                         "{\n"
-                        '  "name": "NBA official website",\n'
-                        '  "domain": "nba.com",\n'
+                        '  "name": "Official organization website",\n'
+                        '  "domain": "example.org",\n'
                         '  "url": null,\n'
                         '  "expected_source_type": "official",\n'
-                        '  "rationale": "Official league source, but exact article URL is not known.",\n'
+                        '  "rationale": "Official source, but exact article URL is not known.",\n'
                         '  "priority": 1\n'
                         "}\n\n"
                         "Allowed expected_source_type values:\n"
@@ -107,7 +107,7 @@ class LLMSearchPlanningAgent(
                         '      "purpose": "string",\n'
                         '      "cost_tier": "free",\n'
                         '      "expected_source_type": "official",\n'
-                        '      "target_domains": ["nba.com"],\n'
+                        '      "target_domains": ["example.org"],\n'
                         '      "provider": "configured_free_provider"\n'
                         "    }\n"
                         "  ],\n"

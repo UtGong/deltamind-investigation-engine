@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import HTTPException, status
 
 from app.agents.cost_aware_search_planning_agent import (
@@ -60,7 +62,7 @@ from app.providers.llm.factory import get_llm_provider
 from app.providers.search.base import SearchProvider
 from app.providers.search.factory import get_free_search_provider, get_paid_search_provider
 from app.schemas.agent import EvidenceItem, PivotVerdict, StanceResult
-from app.schemas.api import InvestigationResult
+from app.schemas.api import InvestigationResult, VerificationError, VerificationStateResponse
 from app.schemas.correction import ClaimCorrection
 from app.schemas.search import SearchQuery, SearchResult
 
@@ -79,6 +81,7 @@ class InvestigationService:
         self.verified_claims = verified_claims
 
         llm_provider = get_llm_provider()
+        self.llm_provider = llm_provider
 
         self.claim_agent = LLMClaimDecompositionAgent(llm_provider=llm_provider)
 
@@ -677,7 +680,7 @@ class InvestigationService:
             source_reliability_service.apply_to_evidence_items(
                 evidence_items=claim_evidence,
                 claim_type=getattr(claim.claim_type, "value", str(claim.claim_type)),
-                topic="eval:nba",
+                topic=getattr(claim.claim_type, "value", str(claim.claim_type)),
             )
 
             source_independence_service = getattr(
@@ -721,7 +724,7 @@ class InvestigationService:
             correction_agent = getattr(
                 self,
                 "correction_agent",
-                ClaimCorrectionAgent(),
+                ClaimCorrectionAgent(llm_provider=self.llm_provider),
             )
             correction_output = correction_agent.run(correction_input)
             correction = correction_output.correction
@@ -730,7 +733,11 @@ class InvestigationService:
             self.audit.record_agent_run(
                 case_id=case.case_id,
                 agent_name=correction_agent.name,
-                provider="internal_deterministic",
+                provider=(
+                    correction_output.raw_response.provider
+                    if correction_output.raw_response is not None
+                    else "llm_correction_unavailable"
+                ),
                 input_data=correction_input,
                 output_data=correction_output,
                 metadata={
@@ -853,6 +860,110 @@ class InvestigationService:
 
         return self.investigation_repo.save(result)
 
+
+    def mark_case_running(self, case_id: str):
+        case = self.case_repo.get(case_id)
+
+        if case is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Case not found: {case_id}",
+            )
+
+        running_case = case.model_copy(
+            update={
+                "status": CaseStatus.RUNNING,
+                "updated_at": utc_now(),
+            }
+        )
+        return self.case_repo.update(running_case)
+
+    def mark_case_failed(
+        self,
+        *,
+        case_id: str,
+        stage: str,
+        error: Exception,
+        agent_name: str = "background_investigation",
+    ) -> None:
+        case = self.case_repo.get(case_id)
+
+        if case is not None:
+            failed_case = case.model_copy(
+                update={
+                    "status": CaseStatus.FAILED,
+                    "updated_at": utc_now(),
+                }
+            )
+            self.case_repo.update(failed_case)
+
+        error_type = type(error).__name__
+        error_message = str(error)
+        upstream_status = getattr(error, "status_code", None)
+        detail = getattr(error, "detail", None)
+
+        self.audit.record_agent_run(
+            case_id=case_id,
+            agent_name=agent_name,
+            provider="backend",
+            input_data={"case_id": case_id},
+            output_data={
+                "failed": True,
+                "detail": detail,
+                "error_type": error_type,
+                "error_message": error_message,
+                "upstream_status": upstream_status,
+            },
+            metadata={
+                "stage": stage,
+                "failed": True,
+                "error_type": error_type,
+                "error_message": error_message,
+                "upstream_status": upstream_status,
+                "detail": detail,
+            },
+        )
+
+    def get_verification_state(self, case_id: str) -> VerificationStateResponse:
+        case = self.case_repo.get(case_id)
+
+        if case is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Case not found: {case_id}",
+            )
+
+        result = self.investigation_repo.get(case_id)
+        trust_certificate = result.trust_certificate if result is not None else None
+        evidence_graph = result.evidence_graph if result is not None else None
+        error = self._latest_error(case_id)
+
+        return VerificationStateResponse(
+            case_id=case_id,
+            case_available=True,
+            case_status=self._frontend_case_status(case.status),
+            investigation_available=result is not None,
+            certificate_available=trust_certificate is not None,
+            evidence_graph_available=evidence_graph is not None,
+            error_available=error is not None,
+            case={
+                "case_id": case.case_id,
+                "title": case.title,
+                "input_type": case.input_type,
+                "input_text": case.input_text,
+                "status": case.status,
+            },
+            investigation=result,
+            trust_certificate=trust_certificate,
+            evidence_graph=evidence_graph,
+            error=error,
+        )
+
+    def _frontend_case_status(self, case_status: CaseStatus) -> str:
+        if case_status == CaseStatus.CREATED:
+            return "queued"
+        return str(case_status)
+
     def _fail_case_due_to_upstream_llm_error(
         self,
         case,
@@ -915,6 +1026,48 @@ class InvestigationService:
                 "error_message": error_message,
             },
         )
+
+
+    def _latest_error(self, case_id: str) -> VerificationError | None:
+        audit_trail = self.audit.get_trail(case_id)
+
+        for agent_run in reversed(audit_trail.agent_runs):
+            metadata: dict[str, Any] = agent_run.metadata or {}
+            if metadata.get("failed") is not True:
+                continue
+
+            return VerificationError(
+                message=str(
+                    metadata.get("message")
+                    or metadata.get("error_message")
+                    or "Investigation failed."
+                ),
+                case_id=case_id,
+                stage=(
+                    str(metadata["stage"])
+                    if metadata.get("stage") is not None
+                    else None
+                ),
+                agent_name=agent_run.agent_name,
+                error_type=(
+                    str(metadata["error_type"])
+                    if metadata.get("error_type") is not None
+                    else None
+                ),
+                error_message=(
+                    str(metadata["error_message"])
+                    if metadata.get("error_message") is not None
+                    else None
+                ),
+                upstream_status=(
+                    int(metadata["upstream_status"])
+                    if metadata.get("upstream_status") is not None
+                    else None
+                ),
+                metadata=metadata,
+            )
+
+        return None
 
     def get_result(self, case_id: str) -> InvestigationResult:
         result = self.investigation_repo.get(case_id)

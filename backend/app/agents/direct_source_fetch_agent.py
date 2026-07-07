@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 from app.agents.base import Agent
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput
-from app.core.config import get_settings
 from app.core.constants import SourceType
 from app.schemas.agent import AtomicClaim
 from app.schemas.search import SearchPlan, SearchQuery, SearchResult, SourceCandidate
@@ -49,10 +48,7 @@ class DirectSourceFetchAgent(
         fetch_count = 0
 
         for candidate_index, candidate in enumerate(
-            sorted(
-                input_data.search_plan.source_candidates,
-                key=lambda item: item.priority,
-            ),
+            sorted(input_data.search_plan.source_candidates, key=lambda item: item.priority),
             start=1,
         ):
             candidate_urls = self._candidate_urls(
@@ -67,9 +63,7 @@ class DirectSourceFetchAgent(
                 )
                 continue
 
-            expanded_urls.extend(
-                url for url in candidate_urls if url != candidate.url
-            )
+            expanded_urls.extend(url for url in candidate_urls if url != candidate.url)
 
             for url_index, url in enumerate(candidate_urls, start=1):
                 if fetch_count >= self.max_total_fetches:
@@ -86,9 +80,7 @@ class DirectSourceFetchAgent(
                 fetch_count += 1
 
                 try:
-                    fetched = self.url_fetch_agent.run(
-                        UrlFetchInput(url=url)
-                    )
+                    fetched = self.url_fetch_agent.run(UrlFetchInput(url=url))
                 except Exception:
                     failed_urls.append(url)
                     skipped_candidates.append(url)
@@ -99,28 +91,16 @@ class DirectSourceFetchAgent(
                     skipped_candidates.append(url)
                     continue
 
-                result = self._to_search_result(
-                    claim=input_data.claim,
-                    candidate=candidate,
-                    result_suffix=f"{candidate_index}_{url_index}",
-                    final_url=fetched.final_url or url,
-                    title=fetched.title or candidate.name or url,
-                    text=fetched.text,
+                results.append(
+                    self._to_search_result(
+                        claim=input_data.claim,
+                        candidate=candidate,
+                        result_suffix=f"{candidate_index}_{url_index}",
+                        final_url=fetched.final_url or url,
+                        title=fetched.title or candidate.name or url,
+                        text=fetched.text,
+                    )
                 )
-
-                results.append(result)
-
-        for failed_url in list(failed_urls):
-            fixture_result = _dev_fixture_result_for_failed_url(
-                url=failed_url,
-                claim_id=input_data.claim.claim_id,
-                result_id=(
-                    f"{input_data.claim.claim_id}_direct_source_fixture_"
-                    f"{len(results) + 1}"
-                ),
-            )
-            if fixture_result is not None:
-                results.append(fixture_result)
 
         return DirectSourceFetchOutput(
             results=results,
@@ -139,37 +119,21 @@ class DirectSourceFetchAgent(
             return [candidate.url]
 
         domain = self._normalize_domain(candidate.domain)
-
-        if not domain:
+        if not domain or not search_plan.queries:
             return []
-
-        if not search_plan.queries and not self._is_known_expandable_domain(domain):
-            return []
-
-        queries = self._queries_for_domain(
-            claim=claim,
-            domain=domain,
-            search_plan=search_plan,
-        )
 
         urls: list[str] = []
-
-        for query in queries:
+        for query in self._queries_for_domain(claim=claim, domain=domain, search_plan=search_plan):
             urls.extend(self._domain_search_urls(domain, query))
-
-        urls.extend(self._domain_landing_urls(domain))
 
         deduped: list[str] = []
         seen: set[str] = set()
-
         for url in urls:
             normalized = self._normalize_url_for_dedupe(url)
             if normalized in seen:
                 continue
-
             seen.add(normalized)
             deduped.append(url)
-
             if len(deduped) >= self.max_expanded_urls_per_candidate:
                 break
 
@@ -193,7 +157,7 @@ class DirectSourceFetchAgent(
                 continue
 
             if domain in target_domains or any(
-                target_domain.endswith(domain) or domain.endswith(target_domain)
+                target_domain and (target_domain.endswith(domain) or domain.endswith(target_domain))
                 for target_domain in target_domains
             ):
                 matching_queries.append(query)
@@ -201,11 +165,7 @@ class DirectSourceFetchAgent(
         if not matching_queries:
             matching_queries = search_plan.queries
 
-        query_texts = [
-            query.query.strip()
-            for query in matching_queries
-            if query.query.strip()
-        ]
+        query_texts = [query.query.strip() for query in matching_queries if query.query.strip()]
 
         if not query_texts:
             query_texts = [claim.claim_text]
@@ -217,66 +177,19 @@ class DirectSourceFetchAgent(
             key = query_text.lower()
             if key in seen:
                 continue
-
             seen.add(key)
             deduped.append(query_text)
-
             if len(deduped) >= 2:
                 break
 
         return deduped
 
-    def _is_known_expandable_domain(self, domain: str) -> bool:
-        return domain in {
-            "nba.com",
-            "espn.com",
-            "cbssports.com",
-            "theathletic.com",
-        }
-
     def _domain_search_urls(self, domain: str, query: str) -> list[str]:
         encoded_query = quote_plus(query)
-
-        if domain in {"nba.com", "www.nba.com"}:
-            return [
-                f"https://www.nba.com/search?query={encoded_query}",
-                f"https://www.nba.com/search?search={encoded_query}",
-            ]
-
-        if domain in {"espn.com", "www.espn.com"}:
-            return [
-                f"https://www.espn.com/search/_/q/{encoded_query}",
-                f"https://www.espn.com/search/results?q={encoded_query}",
-            ]
-
-        if domain in {"cbssports.com", "www.cbssports.com"}:
-            return [
-                f"https://www.cbssports.com/search/?q={encoded_query}",
-            ]
-
-        if domain in {"theathletic.com", "www.theathletic.com"}:
-            return [
-                f"https://www.theathletic.com/search/?q={encoded_query}",
-            ]
-
         return [
             f"https://{domain}/search?q={encoded_query}",
             f"https://{domain}/?s={encoded_query}",
         ]
-
-    def _domain_landing_urls(self, domain: str) -> list[str]:
-        if domain in {"nba.com", "www.nba.com"}:
-            return [
-                "https://www.nba.com/news",
-                "https://www.nba.com/playoffs/2024/the-finals",
-            ]
-
-        if domain in {"espn.com", "www.espn.com"}:
-            return [
-                "https://www.espn.com/nba/",
-            ]
-
-        return [f"https://{domain}"]
 
     def _to_search_result(
         self,
@@ -326,55 +239,3 @@ class DirectSourceFetchAgent(
 
     def _normalize_url_for_dedupe(self, url: str) -> str:
         return url.strip().rstrip("/")
-
-
-def _dev_fixture_result_for_failed_url(
-    *,
-    url: str,
-    claim_id: str,
-    result_id: str,
-) -> SearchResult | None:
-    settings = get_settings()
-    if not settings.dev_llm_fallback_enabled:
-        return None
-
-    if url == "https://www.nba.com/playoffs/2023/nba-finals":
-        return SearchResult(
-            result_id=result_id,
-            query_id=f"{claim_id}_dev_fixture_2023_nba_finals",
-            title="2023 NBA Finals | NBA.com",
-            url=url,
-            snippet=(
-                "The Denver Nuggets defeated the Miami Heat in the 2023 NBA Finals "
-                "and won their first NBA championship. Nikola Jokic was named "
-                "Finals MVP."
-            ),
-            source_name="NBA official fixture fallback",
-            domain="nba.com",
-            source_type=SourceType.OFFICIAL,
-            reliability=0.945,
-            independence=0.7,
-            freshness=0.6,
-            specificity=0.9,
-        )
-
-    if url == "https://www.nba.com/playoffs/2024/nba-finals":
-        return SearchResult(
-            result_id=result_id,
-            query_id=f"{claim_id}_dev_fixture_2024_nba_finals",
-            title="2024 NBA Finals | NBA.com",
-            url=url,
-            snippet=(
-                "The Boston Celtics defeated the Dallas Mavericks in the 2024 "
-                "NBA Finals to secure Boston's NBA-record 18th championship."
-            ),
-            source_name="NBA official fixture fallback",
-            domain="nba.com",
-            source_type=SourceType.OFFICIAL,
-            reliability=0.945,
-            independence=0.7,
-            freshness=0.6,
-            specificity=0.9,
-        )
-
-    return None

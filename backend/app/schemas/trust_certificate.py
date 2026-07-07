@@ -133,6 +133,15 @@ class TrustCertificateStatusCard(BaseModel):
     timeline: list[TrustCertificateTimelineEvent] = Field(default_factory=list)
 
 
+class TrustCertificateStatusCardPage(BaseModel):
+    items: list[TrustCertificateStatusCard] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+    filters: dict[str, Any] = Field(default_factory=dict)
+
+
 class TrustCertificateLifecycleResponse(BaseModel):
     certificate_id: str
     case_id: str

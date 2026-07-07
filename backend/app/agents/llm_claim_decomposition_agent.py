@@ -222,7 +222,7 @@ class LLMClaimDecompositionAgent(
         if any(word in lowered for word in ["won", "lost", "beat", "defeated", "score"]):
             return ClaimType.RESULT
 
-        if any(word in lowered for word in ["schedule", "fixture", "match date"]):
+        if any(word in lowered for word in ["schedule", "match date"]):
             return ClaimType.SCHEDULE
 
         if re.search(r"\b\d+(?:\.\d+)?%?\b", lowered):

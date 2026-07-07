@@ -17,7 +17,7 @@ def test_postgres_verified_claim_repository_roundtrip_when_database_connected():
 
     claim = AtomicClaim(
         claim_id="claim_test_1",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.RESULT,
         confidence=0.95,
     )
@@ -44,7 +44,7 @@ def test_postgres_verified_claim_repository_roundtrip_when_database_connected():
     assert saved.metadata["storage"] == "postgres"
 
     cached = repository.get_by_claim_text(
-        "The Boston Celtics won the 2024 NBA Finals."
+        "The Team Green won the 2024 Example Final."
     )
 
     assert cached is not None

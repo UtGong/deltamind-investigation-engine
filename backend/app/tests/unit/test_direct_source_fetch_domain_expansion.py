@@ -17,12 +17,12 @@ class FakeUrlFetchAgent:
         url = str(input_data.url)
         self.urls.append(url)
 
-        if "nba.com/search" in url:
+        if "example.org/search" in url:
             return SimpleNamespace(
                 error=None,
-                text="The Boston Celtics won the 2024 NBA Finals.",
+                text="The Team Green won the 2024 Example Final.",
                 final_url=url,
-                title="NBA search result",
+                title="Example League search result",
             )
 
         return SimpleNamespace(
@@ -43,7 +43,7 @@ def test_direct_source_fetch_expands_domain_only_candidates():
 
     claim = AtomicClaim(
         claim_id="claim_test",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.EVENT,
     )
 
@@ -51,11 +51,11 @@ def test_direct_source_fetch_expands_domain_only_candidates():
         claim_id=claim.claim_id,
         source_candidates=[
             SourceCandidate(
-                name="NBA official website",
-                domain="nba.com",
+                name="official website",
+                domain="example.org",
                 url=None,
                 expected_source_type=SourceType.OFFICIAL,
-                rationale="Official NBA source.",
+                rationale="Official official source.",
                 priority=1,
             )
         ],
@@ -63,11 +63,11 @@ def test_direct_source_fetch_expands_domain_only_candidates():
             SearchQuery(
                 query_id="query_1",
                 claim_id=claim.claim_id,
-                query="Boston Celtics won 2024 NBA Finals",
+                query="Team Green won 2024 Example Final",
                 purpose="Find official confirmation.",
                 cost_tier="free",
                 expected_source_type=SourceType.OFFICIAL,
-                target_domains=["nba.com"],
+                target_domains=["example.org"],
                 provider="configured_free_provider",
             )
         ],
@@ -81,23 +81,13 @@ def test_direct_source_fetch_expands_domain_only_candidates():
     )
 
     assert output.expanded_urls
-    assert any("nba.com/search" in url for url in output.expanded_urls)
+    assert any("example.org/search" in url for url in output.expanded_urls)
     assert len(output.results) >= 1
-    assert output.results[0].domain == "nba.com"
-    assert "Boston Celtics won the 2024 NBA Finals" in output.results[0].snippet
+    assert output.results[0].domain == "example.org"
+    assert "Team Green won the 2024 Example Final" in output.results[0].snippet
 
 
-def test_direct_source_fetch_uses_dev_fixture_for_failed_2023_nba_finals_url(monkeypatch):
-    from app.agents.direct_source_fetch_agent import DirectSourceFetchAgent, DirectSourceFetchInput
-    from app.core.config import get_settings
-    from app.core.constants import ClaimType, SourceType
-    from app.schemas.agent import AtomicClaim
-    from app.schemas.search import SearchPlan, SourceCandidate
-
-    monkeypatch.setenv("DEV_LLM_FALLBACK_ENABLED", "true")
-    if hasattr(get_settings, "cache_clear"):
-        get_settings.cache_clear()
-
+def test_direct_source_fetch_does_not_fabricate_evidence_for_failed_url():
     class FailedFetch:
         error = True
         text = ""
@@ -110,11 +100,11 @@ def test_direct_source_fetch_uses_dev_fixture_for_failed_2023_nba_finals_url(mon
 
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Denver Nuggets won the 2023 NBA Finals.",
+        claim_text="The Team Blue won the 2023 Example Final.",
         claim_type=ClaimType.EVENT,
-        subject="The Denver Nuggets",
+        subject="The Team Blue",
         predicate="won",
-        object="the 2023 NBA Finals",
+        object="the 2023 Example Final",
         confidence=1.0,
     )
 
@@ -122,30 +112,19 @@ def test_direct_source_fetch_uses_dev_fixture_for_failed_2023_nba_finals_url(mon
         claim_id="C1",
         source_candidates=[
             SourceCandidate(
-                name="NBA official Finals page",
-                domain="nba.com",
-                url="https://www.nba.com/playoffs/2023/nba-finals",
+                name="official results page",
+                domain="example.org",
+                url="https://www.example.org/results/example-final",
                 expected_source_type=SourceType.OFFICIAL,
-                rationale="Official Finals page.",
+                rationale="Official source candidate.",
                 priority=1,
             )
         ],
     )
 
-    output = DirectSourceFetchAgent(
-        url_fetch_agent=FailingUrlFetchAgent()
-    ).run(
-        DirectSourceFetchInput(
-            claim=claim,
-            search_plan=search_plan,
-        )
+    output = DirectSourceFetchAgent(url_fetch_agent=FailingUrlFetchAgent()).run(
+        DirectSourceFetchInput(claim=claim, search_plan=search_plan)
     )
 
-    assert len(output.results) == 1
-    assert output.results[0].url == "https://www.nba.com/playoffs/2023/nba-finals"
-    assert "Denver Nuggets defeated the Miami Heat" in output.results[0].snippet
-    assert output.results[0].source_type == SourceType.OFFICIAL
-
-    monkeypatch.setenv("DEV_LLM_FALLBACK_ENABLED", "false")
-    if hasattr(get_settings, "cache_clear"):
-        get_settings.cache_clear()
+    assert output.results == []
+    assert output.failed_urls == ["https://www.example.org/results/example-final"]

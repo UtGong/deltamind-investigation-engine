@@ -17,9 +17,9 @@ class FakePlannerLLMProvider(LLMProvider):
             {
               "source_candidates": [
                 {
-                  "name": "NBA official article",
-                  "domain": "nba.com",
-                  "url": "https://www.nba.com/news/boston-celtics-win-2024-nba-finals",
+                  "name": "official article",
+                  "domain": "example.org",
+                  "url": "https://www.example.org/news/boston-celtics-win-2024-example-final",
                   "expected_source_type": "official",
                   "rationale": "Official league article for the Finals result.",
                   "priority": 1
@@ -27,11 +27,11 @@ class FakePlannerLLMProvider(LLMProvider):
               ],
               "queries": [
                 {
-                  "query": "Boston Celtics won 2024 NBA Finals official NBA",
+                  "query": "Team Green won 2024 Example Final official Example League",
                   "purpose": "Find official confirmation.",
                   "cost_tier": "free",
                   "expected_source_type": "official",
-                  "target_domains": ["nba.com"],
+                  "target_domains": ["example.org"],
                   "provider": "configured_free_provider"
                 }
               ],
@@ -55,7 +55,7 @@ def test_llm_search_planning_agent_preserves_exact_candidate_url():
         LLMSearchPlanningInput(
             claim=AtomicClaim(
                 claim_id="claim_1",
-                claim_text="The Boston Celtics won the 2024 NBA Finals.",
+                claim_text="The Team Green won the 2024 Example Final.",
                 claim_type=ClaimType.RESULT,
                 confidence=0.95,
             )
@@ -65,9 +65,9 @@ def test_llm_search_planning_agent_preserves_exact_candidate_url():
     plan = output.search_plan
 
     assert len(plan.source_candidates) == 1
-    assert plan.source_candidates[0].url == "https://www.nba.com/news/boston-celtics-win-2024-nba-finals"
+    assert plan.source_candidates[0].url == "https://www.example.org/news/boston-celtics-win-2024-example-final"
     assert plan.source_candidates[0].expected_source_type == SourceType.OFFICIAL
 
     assert len(plan.queries) == 1
     assert plan.queries[0].provider == "configured_free_provider"
-    assert plan.queries[0].target_domains == ["nba.com"]
+    assert plan.queries[0].target_domains == ["example.org"]

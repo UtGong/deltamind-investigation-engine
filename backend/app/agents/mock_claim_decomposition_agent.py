@@ -47,7 +47,7 @@ class MockClaimDecompositionAgent(
         if any(word in lowered for word in ["transfer", "joined", "signed"]):
             return ClaimType.TRANSFER
 
-        if any(word in lowered for word in ["schedule", "fixture", "match date"]):
+        if any(word in lowered for word in ["schedule", "match date"]):
             return ClaimType.SCHEDULE
 
         return ClaimType.UNKNOWN

@@ -1,12 +1,64 @@
-from fastapi import APIRouter, HTTPException, status
+import concurrent.futures
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 
 from app.domain.investigations.service import investigation_service
 from app.domain.trust_certificates.registry import trust_certificate_registry
 from app.domain.trust_certificates.lifecycle import trust_certificate_lifecycle
 from app.domain.trust_certificates.status_card import build_trust_certificate_status_card
+from app.schemas.api import AsyncInvestigationResponse, VerificationStateResponse
 from app.schemas.trust_certificate import TrustCertificateStatusCard, TrustCertificateTimelineEvent
 
 router = APIRouter(prefix="/cases", tags=["investigations"])
+
+BACKGROUND_INVESTIGATION_TIMEOUT_SECONDS = 600
+
+
+def _run_investigation_with_timeout(case_id: str) -> None:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(investigation_service.investigate_case, case_id)
+
+    try:
+        future.result(timeout=BACKGROUND_INVESTIGATION_TIMEOUT_SECONDS)
+    except concurrent.futures.TimeoutError as error:
+        investigation_service.mark_case_failed(
+            case_id=case_id,
+            stage="background_investigation_timeout",
+            agent_name="background_investigation",
+            error=TimeoutError(
+                "Investigation exceeded the configured background timeout "
+                f"of {BACKGROUND_INVESTIGATION_TIMEOUT_SECONDS} seconds."
+            ),
+        )
+        raise error
+    except Exception as error:
+        investigation_service.mark_case_failed(
+            case_id=case_id,
+            stage="background_investigation",
+            agent_name="background_investigation",
+            error=error,
+        )
+        raise
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+@router.post(
+    "/{case_id}/investigate-async",
+    response_model=AsyncInvestigationResponse,
+)
+def investigate_case_async(
+    case_id: str,
+    background_tasks: BackgroundTasks,
+) -> AsyncInvestigationResponse:
+    investigation_service.mark_case_running(case_id)
+    background_tasks.add_task(_run_investigation_with_timeout, case_id)
+
+    return AsyncInvestigationResponse(
+        case_id=case_id,
+        status="running",
+        message="Investigation started in the background.",
+    )
 
 
 @router.post("/{case_id}/investigate")
@@ -30,6 +82,14 @@ def investigate_case(case_id: str):
 @router.get("/{case_id}/investigation")
 def get_investigation_result(case_id: str):
     return investigation_service.get_result(case_id)
+
+
+@router.get(
+    "/{case_id}/verification-state",
+    response_model=VerificationStateResponse,
+)
+def get_verification_state(case_id: str) -> VerificationStateResponse:
+    return investigation_service.get_verification_state(case_id)
 
 
 @router.get("/{case_id}/evidence-graph")
@@ -66,7 +126,7 @@ def get_trust_certificate(case_id: str):
     return trust_certificate
 
 
-@router.get("/trust-certificates")
+@router.get("/trust-certificates", deprecated=True)
 def list_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 

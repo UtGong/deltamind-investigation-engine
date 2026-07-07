@@ -6,25 +6,25 @@ from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceRes
 def test_evidence_graph_builder_creates_core_nodes_and_edges():
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Dallas Mavericks won the 2024 NBA Finals.",
+        claim_text="The Team Silver won the 2024 Example Final.",
         claim_type=ClaimType.UNKNOWN,
         confidence=0.9,
     )
     evidence = EvidenceItem(
         evidence_id="E1",
         claim_id="C1",
-        source_id="source_nba",
-        url="https://www.nba.com/playoffs/2024/nba-finals",
-        title="2024 NBA Finals",
-        evidence_text="The Boston Celtics defeated the Dallas Mavericks.",
+        source_id="source_example",
+        url="https://www.example.org/playoffs/2024/example-final",
+        title="2024 Example Final",
+        evidence_text="The Team Green defeated the Team Silver.",
         reliability=0.8077,
         independence=0.85,
-        independence_group="domain:nba.com",
+        independence_group="domain:example.org",
         freshness=0.8,
         specificity=0.9,
         metadata={
             "reliability_source": "learned_source_reliability",
-            "reliability_domain": "nba.com",
+            "reliability_domain": "example.org",
             "independence_source": "common_origin_cluster_v0",
             "corroboration_discount": 0.15,
         },
@@ -71,4 +71,4 @@ def test_evidence_graph_builder_creates_core_nodes_and_edges():
 
     assert graph.summary["claim_count"] == 1
     assert graph.summary["evidence_count"] == 1
-    assert graph.summary["independence_cluster_counts"]["domain:nba.com"] == 1
+    assert graph.summary["independence_cluster_counts"]["domain:example.org"] == 1

@@ -15,6 +15,7 @@ from app.schemas.trust_certificate import (
     TrustCertificateReverificationEventSummary,
     TrustCertificateRegistryItem,
     TrustCertificateStatusCard,
+    TrustCertificateStatusCardPage,
 )
 
 
@@ -48,6 +49,8 @@ def _recent_cards(
     overall_verdict: str | None = None,
     min_trust_index: float | None = None,
     has_been_reverified: bool | None = None,
+    sort_by: str = "updated_at",
+    sort_order: str = "desc",
 ):
     limit = max(1, min(limit, 100))
     fetch_limit = min(max(limit * 3, limit), 100)
@@ -79,7 +82,22 @@ def _recent_cards(
         if len(cards) >= limit:
             break
 
-    return cards
+    return _sort_status_cards(cards, sort_by=sort_by, sort_order=sort_order)
+
+
+def _sort_status_cards(cards, *, sort_by: str = "updated_at", sort_order: str = "desc"):
+    reverse = str(sort_order).lower() != "asc"
+
+    def key(card):
+        if sort_by == "trust_index":
+            return float(card.trust_index or 0.0)
+        if sort_by == "event_count":
+            return int(card.event_count or 0)
+        if sort_by == "issued_at":
+            return card.issued_at
+        return card.updated_at or card.issued_at
+
+    return sorted(cards, key=key, reverse=reverse)
 
 
 @router.get("/recent", response_model=list[TrustCertificateRegistryItem])
@@ -95,6 +113,8 @@ def list_recent_trust_certificate_status_cards(
     overall_verdict: str | None = None,
     min_trust_index: float | None = None,
     has_been_reverified: bool | None = None,
+    sort_by: str = "updated_at",
+    sort_order: str = "desc",
 ):
     return _recent_cards(
         limit=limit,
@@ -103,6 +123,55 @@ def list_recent_trust_certificate_status_cards(
         overall_verdict=overall_verdict,
         min_trust_index=min_trust_index,
         has_been_reverified=has_been_reverified,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+
+@router.get("/recent/status-cards/page", response_model=TrustCertificateStatusCardPage)
+def list_recent_trust_certificate_status_card_page(
+    limit: int = 20,
+    offset: int = 0,
+    scan_limit: int = 100,
+    lifecycle_status: str | None = None,
+    action_required: str | None = None,
+    overall_verdict: str | None = None,
+    min_trust_index: float | None = None,
+    has_been_reverified: bool | None = None,
+    sort_by: str = "updated_at",
+    sort_order: str = "desc",
+):
+    safe_limit = max(1, limit)
+    safe_offset = max(0, offset)
+    effective_scan_limit = max(scan_limit, safe_offset + safe_limit)
+    cards = _recent_cards(
+        limit=effective_scan_limit,
+        lifecycle_status=lifecycle_status,
+        action_required=action_required,
+        overall_verdict=overall_verdict,
+        min_trust_index=min_trust_index,
+        has_been_reverified=has_been_reverified,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    items = cards[safe_offset : safe_offset + safe_limit]
+
+    return TrustCertificateStatusCardPage(
+        items=items,
+        total=len(cards),
+        limit=safe_limit,
+        offset=safe_offset,
+        has_more=len(cards) > safe_offset + safe_limit,
+        filters={
+            "lifecycle_status": lifecycle_status,
+            "action_required": action_required,
+            "overall_verdict": overall_verdict,
+            "min_trust_index": min_trust_index,
+            "has_been_reverified": has_been_reverified,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "scan_limit": effective_scan_limit,
+        },
     )
 
 

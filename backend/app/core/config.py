@@ -20,10 +20,13 @@ class Settings(BaseSettings):
     embedding_dimension: int = 768
 
     # LLM
-    llm_provider: str = "mock"
+    llm_provider: str = "ollama"
     dev_llm_fallback_enabled: bool = False
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2:3b"
+    ollama_timeout_seconds: int = 60
 
     # Exact LLM request cache
     llm_cache_enabled: bool = True

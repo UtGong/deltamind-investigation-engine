@@ -68,8 +68,8 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_support",
             claim_id="C1",
-            source_id="S_nba",
-            evidence_text="The Boston Celtics won the 2024 NBA Finals.",
+            source_id="S_example",
+            evidence_text="The Team Green won the 2024 Example Final.",
             reliability=0.945,
             independence=0.7,
             freshness=0.6,
@@ -78,7 +78,7 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_1",
             claim_id="C1",
-            source_id="S_nba",
+            source_id="S_example",
             evidence_text="Navigation page with weak search text.",
             reliability=0.945,
             independence=0.7,
@@ -88,7 +88,7 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_2",
             claim_id="C1",
-            source_id="S_nba",
+            source_id="S_example",
             evidence_text="Another search/navigation page.",
             reliability=0.945,
             independence=0.7,
@@ -98,8 +98,8 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_3",
             claim_id="C1",
-            source_id="S_nba",
-            evidence_text="A broad NBA news page.",
+            source_id="S_example",
+            evidence_text="A broad example news page.",
             reliability=0.945,
             independence=0.7,
             freshness=0.6,
@@ -184,8 +184,8 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_support",
             claim_id="C1",
-            source_id="S_nba",
-            evidence_text="The Boston Celtics won the 2024 NBA Finals.",
+            source_id="S_example",
+            evidence_text="The Team Green won the 2024 Example Final.",
             reliability=0.945,
             independence=0.7,
             freshness=0.6,
@@ -194,7 +194,7 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_1",
             claim_id="C1",
-            source_id="S_nba",
+            source_id="S_example",
             evidence_text="Navigation page with weak search text.",
             reliability=0.945,
             independence=0.7,
@@ -204,7 +204,7 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_2",
             claim_id="C1",
-            source_id="S_nba",
+            source_id="S_example",
             evidence_text="Another search/navigation page.",
             reliability=0.945,
             independence=0.7,
@@ -214,8 +214,8 @@ def test_strong_support_not_overruled_by_insufficient_noise():
         EvidenceItem(
             evidence_id="E_noise_3",
             claim_id="C1",
-            source_id="S_nba",
-            evidence_text="A broad NBA news page.",
+            source_id="S_example",
+            evidence_text="A broad example news page.",
             reliability=0.945,
             independence=0.7,
             freshness=0.6,

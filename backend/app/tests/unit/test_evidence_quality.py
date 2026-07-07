@@ -9,20 +9,20 @@ from app.schemas.agent import AtomicClaim, EvidenceItem
 def test_evidence_quality_keeps_relevant_direct_evidence():
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.EVENT,
-        subject="Boston Celtics",
+        subject="Team Green",
         predicate="won",
-        object="2024 NBA Finals",
+        object="2024 Example Final",
     )
 
     evidence = EvidenceItem(
         evidence_id="E1",
         claim_id="C1",
         source_id="S1",
-        url="https://www.nba.com/news/example",
-        title="Celtics win 2024 NBA Finals",
-        evidence_text="The Boston Celtics won the 2024 NBA Finals after defeating the Dallas Mavericks.",
+        url="https://www.example.org/news/example",
+        title="Team Green win 2024 Example Final",
+        evidence_text="The Team Green won the 2024 Example Final after defeating the Team Silver.",
         reliability=0.95,
         specificity=0.9,
         independence=0.7,
@@ -39,23 +39,23 @@ def test_evidence_quality_keeps_relevant_direct_evidence():
 def test_evidence_quality_flags_navigation_search_page():
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.EVENT,
-        subject="Boston Celtics",
+        subject="Team Green",
         predicate="won",
-        object="2024 NBA Finals",
+        object="2024 Example Final",
     )
 
     evidence = EvidenceItem(
         evidence_id="E1",
         claim_id="C1",
         source_id="S1",
-        url="https://www.nba.com/search?query=Boston+Celtics",
-        title="Search | NBA.com",
+        url="https://www.example.org/search?query=Boston+Team Green",
+        title="Search | Example League.com",
         evidence_text=(
-            "Navigation Toggle Home Tickets NBA Schedule Standings Teams Players Stats "
+            "Navigation Toggle Home Tickets Example Schedule Standings Teams Players Stats "
             "Store Fantasy DraftKings FanDuel Privacy Policy Terms of Use Subscribe Login "
-            "Boston Celtics NBA Finals"
+            "Team Green Example Final"
         ),
         reliability=0.95,
         specificity=0.4,
@@ -72,7 +72,7 @@ def test_evidence_quality_flags_navigation_search_page():
 def test_filter_keeps_best_available_when_all_candidates_are_weak():
     claim = AtomicClaim(
         claim_id="C1",
-        claim_text="The Boston Celtics won the 2024 NBA Finals.",
+        claim_text="The Team Green won the 2024 Example Final.",
         claim_type=ClaimType.EVENT,
     )
 
@@ -81,7 +81,7 @@ def test_filter_keeps_best_available_when_all_candidates_are_weak():
             evidence_id="E1",
             claim_id="C1",
             source_id="S1",
-            title="Search | NBA.com",
+            title="Search | Example League.com",
             evidence_text="Navigation Home Tickets Schedule Teams Players Stats Store",
             reliability=0.7,
             specificity=0.2,

@@ -11,10 +11,34 @@ class MockLLMProvider:
     def generate(self, request: LLMRequest) -> LLMResponse:
         joined_prompt = "\n".join(message.content for message in request.messages)
 
-        if "extract atomic claims" in joined_prompt.lower():
+        lowered_prompt = joined_prompt.lower()
+
+        if "extract atomic claims" in lowered_prompt:
             input_text = self._extract_input_text(joined_prompt)
             claims = self._make_claims(input_text)
             content = json.dumps({"claims": claims})
+        elif "classify the stance" in lowered_prompt:
+            content = json.dumps({
+                "stance_label": "insufficient",
+                "confidence": 0.4,
+                "rationale": "Mock stance classification for tests."
+            })
+        elif "decide whether the claim needs a corrected version" in lowered_prompt:
+            content = json.dumps({
+                "needs_correction": False,
+                "corrected_claim": None,
+                "correction_type": "none",
+                "changed_fields": [],
+                "confidence": 0.0,
+                "evidence_ids": [],
+                "rationale": "Mock correction provider did not propose a correction."
+            })
+        elif "generate a search plan" in lowered_prompt or "search plan" in lowered_prompt:
+            content = json.dumps({
+                "queries": [],
+                "source_candidates": [],
+                "rationale": "Mock search plan for tests."
+            })
         else:
             content = json.dumps({"message": "Mock LLM response."})
 
@@ -69,7 +93,7 @@ class MockLLMProvider:
         if any(word in lowered for word in ["won", "lost", "beat", "defeated", "score"]):
             return "result"
 
-        if any(word in lowered for word in ["schedule", "fixture", "match date"]):
+        if any(word in lowered for word in ["schedule", "match date"]):
             return "schedule"
 
         return "unknown"

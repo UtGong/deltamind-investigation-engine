@@ -22,7 +22,7 @@ def test_dev_fallback_llm_provider_returns_mock_response_after_primary_failure()
             messages=[
                 LLMMessage(
                     role="user",
-                    content="Create a retrieval plan for this claim: The Boston Celtics won the 2024 NBA Finals.",
+                    content="Create a retrieval plan for this claim: The Team Green won the 2024 Example Final.",
                 )
             ],
             temperature=0.0,

@@ -11,6 +11,8 @@ venv/
 .env
 .env.*
 !.env.example
+!frontend/.env.local.example
+!backend/.env.example
 
 # Local data / caches
 backend/data/
@@ -51,3 +53,5 @@ backend/data/eval/eval_server.log
 
 # Runtime trust certificate exports
 backend/data/certificates/
+
+backend/data/openapi/
