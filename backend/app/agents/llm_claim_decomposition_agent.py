@@ -55,6 +55,9 @@ class LLMClaimDecompositionAgent(
                         "6. Do not use generic claim_type values like fact or statement.\n"
                         "7. confidence MUST be a number from 0.0 to 1.0, not text.\n"
                         "8. If subject, predicate, or object is unclear, use null.\n\n"
+                        "9. For sports result claims, keep qualifiers such as score, round, tournament, "
+                        "season, and date attached to the central matchup. Do not split phrases like "
+                        "'with a 3-1 win' or 'in the Round of 16' into standalone claims.\n\n"
                         "Return exactly this JSON object shape:\n"
                         "{\n"
                         '  "claims": [\n'
@@ -139,7 +142,7 @@ class LLMClaimDecompositionAgent(
         if not claims:
             return self._fallback_claims(case_id, original_input)
 
-        return claims
+        return self._repair_claims(case_id, original_input, claims)
 
     def _safe_json_loads(self, content: str) -> dict | list | None:
         cleaned = content.strip()
@@ -195,6 +198,76 @@ class LLMClaimDecompositionAgent(
             )
             for index, sentence in enumerate(sentences, start=1)
         ]
+
+    def _repair_claims(
+        self,
+        case_id: str,
+        original_input: str,
+        claims: list[AtomicClaim],
+    ) -> list[AtomicClaim]:
+        if not self._is_compact_sports_result(original_input):
+            return claims
+
+        return [
+            AtomicClaim(
+                claim_id=f"{case_id}_claim_1",
+                claim_text=" ".join(original_input.strip().split()),
+                claim_type=ClaimType.RESULT,
+                subject=self._matchup_subject(original_input),
+                predicate="result",
+                object=self._matchup_object(original_input),
+                confidence=max([claim.confidence for claim in claims] + [0.75]),
+            )
+        ]
+
+    def _is_compact_sports_result(self, text: str) -> bool:
+        lowered = text.lower()
+        has_result_verb = any(
+            word in lowered
+            for word in ["beat", "beats", "defeated", "defeats", "won", "lost"]
+        )
+        has_score = re.search(r"\b\d+\s*[-–]\s*\d+\b", text) is not None
+        has_context = (
+            "round of" in lowered
+            or "world cup" in lowered
+            or "worldcup" in lowered
+            or re.search(r"\b(?:19|20)\d{2}\b", text) is not None
+        )
+        has_matchup = self._matchup_subject(text) is not None
+
+        return has_result_verb and has_score and has_context and has_matchup
+
+    def _matchup_subject(self, text: str) -> str | None:
+        matchup = re.search(
+            r"\b([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\s+"
+            r"(?:beat|beats|defeated|defeats|vs\.?|versus)\s+"
+            r"([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\b",
+            text,
+        )
+        if not matchup:
+            return None
+
+        return f"{matchup.group(1)} vs {matchup.group(2)}"
+
+    def _matchup_object(self, text: str) -> str | None:
+        parts = []
+
+        score = re.search(r"\b\d+\s*[-–]\s*\d+\b", text)
+        if score:
+            parts.append(f"score {score.group(0)}")
+
+        round_match = re.search(r"\bround of \d+\b", text, flags=re.IGNORECASE)
+        if round_match:
+            parts.append(round_match.group(0))
+
+        year = re.search(r"\b(?:19|20)\d{2}\b", text)
+        if year:
+            parts.append(year.group(0))
+
+        if re.search(r"\bworld\s*cup\b|\bworldcup\b", text, flags=re.IGNORECASE):
+            parts.append("FIFA World Cup")
+
+        return ", ".join(parts) or None
 
     def _parse_claim_type(self, value: object, claim_text: str) -> ClaimType:
         if value is not None:

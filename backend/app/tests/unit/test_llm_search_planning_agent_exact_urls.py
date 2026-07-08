@@ -102,6 +102,48 @@ class BadFragmentPlannerLLMProvider(LLMProvider):
         )
 
 
+class CopiedNbaPlannerLLMProvider(LLMProvider):
+    name = "copied_nba_planner_llm"
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(
+            content="""
+            {
+              "source_candidates": [
+                {
+                  "name": "nba.com",
+                  "domain": "nba.com",
+                  "url": "https://www.nba.com/news/source-article",
+                  "expected_source_type": "official",
+                  "rationale": "Official source likely containing the relevant evidence.",
+                  "priority": 1,
+                  "validation_terms": ["score 3-1"]
+                }
+              ],
+              "queries": [
+                {
+                  "query": "NBA match result with a 3-1 win",
+                  "purpose": "evidence retrieval",
+                  "cost_tier": "free",
+                  "expected_source_type": "official",
+                  "target_domains": ["nba.com"],
+                  "provider": "configured_free_provider",
+                  "validation_terms": ["score 3-1"]
+                }
+              ],
+              "should_use_paid_search": false,
+              "paid_search_rationale": null,
+              "max_paid_search_calls": 0
+            }
+            """,
+            provider=self.name,
+            model="fake-model",
+            input_tokens=10,
+            output_tokens=10,
+            estimated_cost_usd=0.0,
+        )
+
+
 def test_llm_search_planning_agent_preserves_exact_candidate_url():
     agent = LLMSearchPlanningAgent(llm_provider=FakePlannerLLMProvider())
 
@@ -186,3 +228,32 @@ def test_llm_search_planning_agent_repairs_placeholder_and_fragment_plan():
         for query in plan.queries
     )
     assert any("score 3-1" in query.query.lower() for query in plan.queries)
+
+
+def test_llm_search_planning_agent_rejects_copied_nba_plan_for_world_cup_claim():
+    agent = LLMSearchPlanningAgent(llm_provider=CopiedNbaPlannerLLMProvider())
+
+    output = agent.run(
+        LLMSearchPlanningInput(
+            claim=AtomicClaim(
+                claim_id="claim_worldcup_score",
+                claim_text=(
+                    "Belgium beats USA with a 3-1 win in the Round of 16 "
+                    "in WorldCup 2026 v"
+                ),
+                claim_type=ClaimType.RESULT,
+                confidence=0.95,
+            )
+        )
+    )
+
+    plan = output.search_plan
+
+    assert all(candidate.domain != "nba.com" for candidate in plan.source_candidates)
+    assert {candidate.domain for candidate in plan.source_candidates} >= {"fifa.com", "espn.com"}
+    assert all("nba" not in query.query.lower() for query in plan.queries)
+    assert any(
+        query.query == "Belgium vs USA 2026 FIFA World Cup score 3-1"
+        for query in plan.queries
+    )
+    assert any("round of 16" in query.query.lower() for query in plan.queries)

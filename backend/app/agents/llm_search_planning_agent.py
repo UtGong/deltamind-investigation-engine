@@ -79,24 +79,8 @@ class LLMSearchPlanningAgent(
                         "- Identify validation terms such as matchup, date, round, score, quote, amount, entity, location, and source-of-record.\n"
                         "- For each validation term, include the central subject/event plus that term in a query.\n"
                         "- If the claim implies a competition or domain from context, state it as a hypothesis in the query rather than omitting it.\n\n"
-                        "Good source_candidate example when an exact source is known:\n"
-                        "{\n"
-                        '  "name": "Official organization announcement",\n'
-                        '  "domain": "nba.com",\n'
-                        '  "url": "https://www.nba.com/news/source-article",\n'
-                        '  "expected_source_type": "official",\n'
-                        '  "rationale": "Official source likely containing the relevant evidence.",\n'
-                        '  "priority": 1\n'
-                        "}\n\n"
-                        "If you only know the domain, do this:\n"
-                        "{\n"
-                        '  "name": "Official organization website",\n'
-                        '  "domain": "fifa.com",\n'
-                        '  "url": null,\n'
-                        '  "expected_source_type": "official",\n'
-                        '  "rationale": "Official source, but exact article URL is not known.",\n'
-                        '  "priority": 1\n'
-                        "}\n\n"
+                        "Do not copy domains, URLs, or sports leagues from examples or prior runs. "
+                        "Choose domains from the actual claim context.\n\n"
                         "Allowed expected_source_type values:\n"
                         "- official\n"
                         "- primary\n"
@@ -124,7 +108,7 @@ class LLMSearchPlanningAgent(
                         '      "purpose": "string",\n'
                         '      "cost_tier": "free",\n'
                         '      "expected_source_type": "official",\n'
-                        '      "target_domains": ["fifa.com"],\n'
+                        '      "target_domains": [],\n'
                         '      "provider": "configured_free_provider"\n'
                         "    }\n"
                         "  ],\n"
@@ -408,7 +392,7 @@ class LLMSearchPlanningAgent(
         source_candidates = [
             self._enrich_candidate(candidate, profile)
             for candidate in plan.source_candidates
-            if self._is_usable_candidate(candidate)
+            if self._is_usable_candidate(candidate, profile)
         ]
         queries = [
             query
@@ -508,18 +492,19 @@ class LLMSearchPlanningAgent(
 
     def _context_hint(self, claim_text: str, *, claim: AtomicClaim | None) -> str | None:
         lowered = claim_text.lower()
-        current_year = datetime.now(timezone.utc).year
+        explicit_year = re.search(r"\b(?:19|20)\d{2}\b", claim_text)
+        current_year = explicit_year.group(0) if explicit_year else str(datetime.now(timezone.utc).year)
 
         if (
             claim is not None
-            and claim.claim_type == ClaimType.RESULT
+            and claim.claim_type in {ClaimType.RESULT, ClaimType.NUMERIC, ClaimType.EVENT, ClaimType.UNKNOWN}
             and "round of 16" in lowered
             and re.search(r"\b(?:usa|us|u\.s\.|united states|belgium)\b", lowered)
         ):
             return f"{current_year} FIFA World Cup"
 
-        if "world cup" in lowered:
-            return "FIFA World Cup"
+        if "world cup" in lowered or "worldcup" in lowered:
+            return f"{current_year} FIFA World Cup" if explicit_year else "FIFA World Cup"
 
         return None
 
@@ -532,8 +517,8 @@ class LLMSearchPlanningAgent(
     ) -> list[tuple[str, SourceType, str]]:
         lowered = claim_text.lower()
 
-        if claim is not None and claim.claim_type in {ClaimType.RESULT, ClaimType.SCHEDULE}:
-            if "world cup" in lowered or "round of 16" in lowered or (context and "World Cup" in context):
+        if claim is not None and claim.claim_type in {ClaimType.RESULT, ClaimType.SCHEDULE, ClaimType.NUMERIC, ClaimType.EVENT, ClaimType.UNKNOWN}:
+            if "world cup" in lowered or "worldcup" in lowered or "round of 16" in lowered or (context and "World Cup" in context):
                 return [
                     ("fifa.com", SourceType.OFFICIAL, "Official FIFA match and competition source."),
                     ("espn.com", SourceType.TRUSTED_MEDIA, "Trusted sports media with match reports and score pages."),
@@ -620,13 +605,25 @@ class LLMSearchPlanningAgent(
 
         return queries
 
-    def _is_usable_candidate(self, candidate: SourceCandidate) -> bool:
+    def _is_usable_candidate(self, candidate: SourceCandidate, profile: ValidationProfile) -> bool:
         domain = self._normalize_domain(candidate.domain or candidate.url)
-        return bool(domain and domain not in {"example.com", "example.org", "example.net", "test.com", "localhost"})
+        if not domain or domain in {"example.com", "example.org", "example.net", "test.com", "localhost"}:
+            return False
+
+        if candidate.url and candidate.url.rstrip("/").endswith("/news/source-article"):
+            return False
+
+        if self._is_contextually_wrong_domain(domain, profile):
+            return False
+
+        return True
 
     def _is_usable_query(self, query: SearchQuery, profile: ValidationProfile) -> bool:
         query_text = query.query.lower().strip()
         if len(query_text.split()) < 3:
+            return False
+
+        if "nba" in query_text and profile.context and "world cup" in profile.context.lower():
             return False
 
         subject_tokens = {
@@ -637,6 +634,22 @@ class LLMSearchPlanningAgent(
         query_tokens = set(re.findall(r"[a-zA-Z0-9]+", query_text))
 
         return bool(subject_tokens.intersection(query_tokens))
+
+    def _is_contextually_wrong_domain(self, domain: str, profile: ValidationProfile) -> bool:
+        if not profile.context or "world cup" not in profile.context.lower():
+            return False
+
+        football_domains = {
+            domain
+            for domain, _, _ in profile.candidate_domains
+        }
+        allowed_general_domains = {"reuters.com", "apnews.com", "wikipedia.org"}
+        wrong_sport_domains = {"nba.com", "nfl.com", "mlb.com", "nhl.com"}
+
+        if domain in wrong_sport_domains:
+            return True
+
+        return bool(domain.endswith("nba.com") and domain not in football_domains | allowed_general_domains)
 
     def _enrich_candidate(self, candidate: SourceCandidate, profile: ValidationProfile) -> SourceCandidate:
         domain = self._normalize_domain(candidate.domain or candidate.url)

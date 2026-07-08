@@ -60,6 +60,41 @@ class LooseGeminiStyleLLMProvider:
         )
 
 
+class FragmentedWorldCupResultProvider:
+    name = "fragmented_world_cup_provider"
+    model = "test-model"
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(
+            content=(
+                "{"
+                '"claims": ['
+                '{"claim_text":"Belgium beats USA",'
+                '"claim_type":"result",'
+                '"subject":"Belgium",'
+                '"predicate":"beats",'
+                '"object":"USA",'
+                '"confidence":0.8},'
+                '{"claim_text":"with a 3-1 win",'
+                '"claim_type":"numeric",'
+                '"subject":null,'
+                '"predicate":null,'
+                '"object":"3-1",'
+                '"confidence":0.7},'
+                '{"claim_text":"in the Round of 16 in WorldCup 2026",'
+                '"claim_type":"numeric",'
+                '"subject":"Round",'
+                '"predicate":"WorldCup",'
+                '"object":"2026",'
+                '"confidence":0.7}'
+                "]"
+                "}"
+            ),
+            provider=self.name,
+            model=self.model,
+        )
+
+
 def test_llm_claim_decomposition_agent_with_mock_provider():
     agent = LLMClaimDecompositionAgent()
 
@@ -130,3 +165,25 @@ def test_llm_claim_decomposition_agent_normalizes_loose_gemini_output():
     assert output.claims[1].claim_type == ClaimType.RESULT
     assert output.claims[2].claim_type == ClaimType.INJURY
     assert output.claims[0].confidence == 0.9
+
+
+def test_llm_claim_decomposition_agent_repairs_fragmented_world_cup_result():
+    agent = LLMClaimDecompositionAgent(llm_provider=FragmentedWorldCupResultProvider())
+
+    output = agent.run(
+        LLMClaimDecompositionInput(
+            case_id="case_worldcup",
+            input_text=(
+                "Belgium beats USA with a 3-1 win in the Round of 16 "
+                "in WorldCup 2026 v"
+            ),
+        )
+    )
+
+    assert len(output.claims) == 1
+    assert output.claims[0].claim_type == ClaimType.RESULT
+    assert output.claims[0].claim_text == (
+        "Belgium beats USA with a 3-1 win in the Round of 16 in WorldCup 2026 v"
+    )
+    assert output.claims[0].subject == "Belgium vs USA"
+    assert output.claims[0].object == "score 3-1, Round of 16, 2026, FIFA World Cup"
