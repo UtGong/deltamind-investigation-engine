@@ -81,8 +81,8 @@ def test_filter_keeps_best_available_when_all_candidates_are_weak():
             evidence_id="E1",
             claim_id="C1",
             source_id="S1",
-            title="Search | Example League.com",
-            evidence_text="Navigation Home Tickets Schedule Teams Players Stats Store",
+            title="Short local report",
+            evidence_text="A brief local sports note with limited details.",
             reliability=0.7,
             specificity=0.2,
             independence=0.5,
@@ -96,3 +96,40 @@ def test_filter_keeps_best_available_when_all_candidates_are_weak():
     assert len(decisions) == 1
     assert decisions[0]["keep"] is True
     assert "best available evidence" in decisions[0]["reason"]
+
+
+def test_filter_does_not_keep_query_echo_search_page_as_best_available():
+    claim = AtomicClaim(
+        claim_id="C1",
+        claim_text="Belgium won the match with a score of 3-1.",
+        claim_type=ClaimType.RESULT,
+        subject="Belgium",
+        predicate="won",
+        object="score of 3-1",
+    )
+
+    evidence = [
+        EvidenceItem(
+            evidence_id="E1",
+            claim_id="C1",
+            source_id="source_espn_com",
+            url="https://www.espn.com/search?q=Belgium+won+the+match+with+a+score+of+3-1",
+            title="Belgium+won+the+match+with+a+score+of+3-1 - ESPN Search",
+            evidence_text=(
+                "Belgium+won+the+match+with+a+score+of+3-1 - ESPN Search "
+                "Skip to main content Skip to navigation ESPN NFL NBA MLB NHL "
+                "Terms of Use Privacy Policy Found results for Belgium won the match."
+            ),
+            reliability=0.9,
+            specificity=0.7,
+            independence=0.7,
+            freshness=0.6,
+        )
+    ]
+
+    kept, decisions = filter_evidence_items(claim, evidence)
+
+    assert kept == []
+    assert decisions[0]["keep"] is False
+    assert decisions[0]["unsafe_to_keep"] is True
+    assert "low-value" in decisions[0]["reason"]

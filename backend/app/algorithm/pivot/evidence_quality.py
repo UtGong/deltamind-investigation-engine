@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from urllib.parse import parse_qs, urlparse
 
 from app.schemas.agent import AtomicClaim, EvidenceItem
 
@@ -11,6 +12,7 @@ class EvidenceQualityDecision:
     relevance_score: float
     boilerplate_score: float
     reason: str
+    unsafe_to_keep: bool = False
 
 
 _BOILERPLATE_TERMS = {
@@ -71,6 +73,21 @@ def evaluate_evidence_quality(
         evidence_text=text,
     )
     normalized_title = _normalize_text(evidence.title or "")
+    page_kind = _classify_low_value_page(
+        url=evidence.url,
+        title=evidence.title,
+        evidence_text=text,
+    )
+
+    if page_kind:
+        return EvidenceQualityDecision(
+            keep=False,
+            quality_score=0.0,
+            relevance_score=round(relevance_score, 4),
+            boilerplate_score=round(max(boilerplate_score, 0.75), 4),
+            reason=f"Evidence appears to be a low-value {page_kind}, not a source article.",
+            unsafe_to_keep=True,
+        )
 
     if boilerplate_score >= 0.85:
         return EvidenceQualityDecision(
@@ -79,6 +96,7 @@ def evaluate_evidence_quality(
             relevance_score=round(relevance_score, 4),
             boilerplate_score=round(boilerplate_score, 4),
             reason="Evidence appears dominated by boilerplate/navigation text.",
+            unsafe_to_keep=True,
         )
 
     if "search" in normalized_title and boilerplate_score >= 0.65:
@@ -88,6 +106,7 @@ def evaluate_evidence_quality(
             relevance_score=round(relevance_score, 4),
             boilerplate_score=round(boilerplate_score, 4),
             reason="Search result page appears too boilerplate-heavy.",
+            unsafe_to_keep=True,
         )
 
     base_quality = (
@@ -160,6 +179,7 @@ def filter_evidence_items(
             "relevance_score": decision.relevance_score,
             "boilerplate_score": decision.boilerplate_score,
             "reason": decision.reason,
+            "unsafe_to_keep": decision.unsafe_to_keep,
         }
         decisions.append(decision_record)
 
@@ -169,8 +189,16 @@ def filter_evidence_items(
     # Safety valve: do not accidentally erase all evidence when retrieval is scarce.
     # Keep the highest-quality candidate, but mark why it survived.
     if not kept and evidence_items and min_keep_count > 0:
+        safe_fallbacks = [
+            (evidence, decision)
+            for evidence, decision in zip(evidence_items, decisions)
+            if not decision["unsafe_to_keep"]
+        ]
+        if not safe_fallbacks:
+            return kept, decisions
+
         ranked = sorted(
-            zip(evidence_items, decisions),
+            safe_fallbacks,
             key=lambda pair: pair[1]["quality_score"],
             reverse=True,
         )
@@ -273,3 +301,52 @@ def _calculate_boilerplate_score(
         length_penalty = 0.20
 
     return max(0.0, min(1.0, title_penalty + hit_penalty + length_penalty))
+
+
+def _classify_low_value_page(
+    *,
+    url: str | None,
+    title: str | None,
+    evidence_text: str,
+) -> str | None:
+    normalized_title = _normalize_text(title or "")
+    parsed = urlparse(url or "")
+    path = (parsed.path or "/").lower().rstrip("/") or "/"
+    query_keys = {key.lower() for key in parse_qs(parsed.query).keys()}
+
+    if path.endswith("/search") or path == "/search":
+        return "search page"
+
+    if query_keys.intersection({"q", "s", "query", "search"}):
+        return "query results page"
+
+    if "search" in normalized_title and "found results" in evidence_text:
+        return "search page"
+
+    homepage_titles = {
+        "wikipedia",
+        "espn - serving sports fans. anytime. anywhere.",
+        "associated press news: breaking news, latest headlines and videos | ap news",
+    }
+    if path == "/" and normalized_title in homepage_titles:
+        return "homepage"
+
+    if path == "/" and _looks_like_homepage_text(evidence_text):
+        return "homepage"
+
+    return None
+
+
+def _looks_like_homepage_text(evidence_text: str) -> bool:
+    homepage_markers = [
+        "skip to main content",
+        "privacy policy",
+        "terms of use",
+        "newsletter",
+        "sign in",
+        "site search",
+        "home news sport",
+        "menu world sections",
+    ]
+    marker_count = sum(1 for marker in homepage_markers if marker in evidence_text)
+    return marker_count >= 3
