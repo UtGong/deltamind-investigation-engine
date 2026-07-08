@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     # sqlite = current local repositories / legacy cache path
     # postgres = PostgreSQL + pgvector operational store
     database_backend: str = "sqlite"
-    database_url: str = "postgresql+psycopg://deltamind:deltamind_dev_password@localhost:5432/deltamind"
+    database_url: str = ""
     embedding_dimension: int = 768
 
     # LLM
@@ -56,6 +57,22 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def normalize_database_settings(self) -> "Settings":
+        backend = (self.database_backend or "").strip().lower()
+        self.database_backend = backend or "sqlite"
+
+        if backend == "sqlite":
+            candidate = (self.database_url or "").strip()
+            if not candidate:
+                self.database_url = "sqlite:///./data/deltamind_local.sqlite3"
+            else:
+                self.database_url = candidate
+        else:
+            self.database_url = (self.database_url or "").strip()
+
+        return self
 
 
 @lru_cache
