@@ -3,10 +3,9 @@ from sqlalchemy import select
 from app.db.models import CaseRecord as DBCaseRecord
 from app.db.session import SessionLocal
 from app.domain.cases.models import CaseRecord
-from app.domain.cases.repository import CaseRepository
 
 
-class PostgresCaseRepository(CaseRepository):
+class PostgresCaseRepository:
     def create(self, case: CaseRecord) -> CaseRecord:
         record = self._db_record_from_domain(case)
 

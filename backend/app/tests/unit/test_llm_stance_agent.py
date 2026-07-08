@@ -19,6 +19,20 @@ class FakeStanceLLMProvider(LLMProvider):
         )
 
 
+class InsufficientStanceLLMProvider(LLMProvider):
+    name = "insufficient_stance_llm"
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(
+            content='{"stance_label":"insufficient","confidence":0.4,"rationale":"Not enough information."}',
+            provider=self.name,
+            model="fake-model",
+            input_tokens=10,
+            output_tokens=5,
+            estimated_cost_usd=0.0,
+        )
+
+
 def make_claim() -> AtomicClaim:
     return AtomicClaim(
         claim_id="claim_1",
@@ -59,3 +73,33 @@ def test_llm_stance_agent_parses_supports_response():
     assert output.stance.evidence_id == "evidence_1"
     assert output.stance.stance == StanceLabel.SUPPORTS
     assert output.stance.confidence == 0.91
+
+
+def test_llm_stance_agent_overrides_insufficient_for_score_contradiction():
+    claim = AtomicClaim(
+        claim_id="claim_score",
+        claim_text="Belgium beats USA with a 3-1 win in the Round of 16",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_score",
+        claim_id="claim_score",
+        source_id="source_news",
+        title="Belgium defeats United States",
+        evidence_text=(
+            "Belgium's 4-1 victory over the United States in the Round of 16 "
+            "sent the U.S. team out of the tournament."
+        ),
+        reliability=0.9,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.95,
+    )
+
+    output = LLMStanceAgent(llm_provider=InsufficientStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.stance.stance == StanceLabel.CONTRADICTS
+    assert output.stance.confidence == 0.9

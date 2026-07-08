@@ -47,7 +47,7 @@ def _run_investigation_with_timeout(case_id: str) -> None:
     "/{case_id}/investigate-async",
     response_model=AsyncInvestigationResponse,
 )
-def investigate_case_async(
+async def investigate_case_async(
     case_id: str,
     background_tasks: BackgroundTasks,
 ) -> AsyncInvestigationResponse:
@@ -62,7 +62,7 @@ def investigate_case_async(
 
 
 @router.post("/{case_id}/investigate")
-def investigate_case(case_id: str):
+async def investigate_case(case_id: str):
     try:
         return investigation_service.investigate_case(case_id)
     except HTTPException:
@@ -80,7 +80,7 @@ def investigate_case(case_id: str):
 
 
 @router.get("/{case_id}/investigation")
-def get_investigation_result(case_id: str):
+async def get_investigation_result(case_id: str):
     return investigation_service.get_result(case_id)
 
 
@@ -88,12 +88,12 @@ def get_investigation_result(case_id: str):
     "/{case_id}/verification-state",
     response_model=VerificationStateResponse,
 )
-def get_verification_state(case_id: str) -> VerificationStateResponse:
+async def get_verification_state(case_id: str) -> VerificationStateResponse:
     return investigation_service.get_verification_state(case_id)
 
 
 @router.get("/{case_id}/evidence-graph")
-def get_evidence_graph(case_id: str):
+async def get_evidence_graph(case_id: str):
     result = investigation_service.get_result(case_id)
     evidence_graph = result.evidence_graph
 
@@ -110,7 +110,7 @@ def get_evidence_graph(case_id: str):
 
 
 @router.get("/{case_id}/trust-certificate", deprecated=True)
-def get_trust_certificate(case_id: str):
+async def get_trust_certificate(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -127,17 +127,17 @@ def get_trust_certificate(case_id: str):
 
 
 @router.get("/trust-certificates", deprecated=True)
-def list_trust_certificates(limit: int = 20):
+async def list_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 
 
 @router.get("/trust-certificates/recent", deprecated=True)
-def list_recent_trust_certificates(limit: int = 20):
+async def list_recent_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 
 
 @router.post("/{case_id}/trust-certificate/simulate-downgrade", deprecated=True)
-def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = None):
+async def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -169,7 +169,7 @@ def simulate_trust_certificate_downgrade(case_id: str, payload: dict | None = No
 
 
 @router.post("/{case_id}/trust-certificate/downgrade", deprecated=True)
-def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
+async def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -207,7 +207,7 @@ def downgrade_trust_certificate(case_id: str, payload: dict | None = None):
 
 
 @router.get("/{case_id}/trust-certificate/lifecycle", deprecated=True)
-def get_trust_certificate_lifecycle(case_id: str):
+async def get_trust_certificate_lifecycle(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -232,7 +232,7 @@ def get_trust_certificate_lifecycle(case_id: str):
 
 
 @router.post("/{case_id}/trust-certificate/reactivate", deprecated=True)
-def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
+async def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -270,7 +270,7 @@ def reactivate_trust_certificate(case_id: str, payload: dict | None = None):
 
 
 @router.post("/{case_id}/trust-certificate/reverify", deprecated=True)
-def reverify_trust_certificate(case_id: str, payload: dict | None = None):
+async def reverify_trust_certificate(case_id: str, payload: dict | None = None):
     previous_result = investigation_service.get_result(case_id)
     previous_certificate = previous_result.trust_certificate
 
@@ -327,7 +327,7 @@ def reverify_trust_certificate(case_id: str, payload: dict | None = None):
 
 
 @router.get("/{case_id}/trust-certificate/reverification-summary", deprecated=True)
-def get_trust_certificate_reverification_summary(case_id: str):
+async def get_trust_certificate_reverification_summary(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -391,7 +391,7 @@ def get_trust_certificate_reverification_summary(case_id: str):
 
 
 @router.get("/{case_id}/trust-certificate/status-card", deprecated=True)
-def get_trust_certificate_status_card(case_id: str):
+async def get_trust_certificate_status_card(case_id: str):
     result = investigation_service.get_result(case_id)
     trust_certificate = result.trust_certificate
 
@@ -408,7 +408,7 @@ def get_trust_certificate_status_card(case_id: str):
 
 
 @router.get("/trust-certificates/recent/status-cards", deprecated=True)
-def list_recent_trust_certificate_status_cards(limit: int = 20):
+async def list_recent_trust_certificate_status_cards(limit: int = 20):
     registry_items = trust_certificate_registry.list_recent(limit=limit)
     cards = []
 
@@ -428,7 +428,7 @@ def list_recent_trust_certificate_status_cards(limit: int = 20):
 
 
 @router.get("/trust-certificates/recent/dashboard-summary", deprecated=True)
-def get_recent_trust_certificate_dashboard_summary(limit: int = 20):
+async def get_recent_trust_certificate_dashboard_summary(limit: int = 20):
     registry_items = trust_certificate_registry.list_recent(limit=limit)
     cards = []
 

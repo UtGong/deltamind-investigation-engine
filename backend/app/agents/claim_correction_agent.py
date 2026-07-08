@@ -4,6 +4,7 @@ import re
 from pydantic import BaseModel, Field
 
 from app.agents.base import Agent
+from app.agents.score_facts import build_score_correction
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
 from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceResult
@@ -49,6 +50,10 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
         payload = self._safe_json_loads(response.content)
 
         if payload is None:
+            deterministic_correction = self._score_correction(input_data)
+            if deterministic_correction is not None:
+                return ClaimCorrectionOutput(correction=deterministic_correction)
+
             return ClaimCorrectionOutput(
                 correction=ClaimCorrection(
                     claim_id=input_data.claim.claim_id,
@@ -59,6 +64,14 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
             )
 
         correction = self._parse_correction(input_data, payload)
+        if not correction.needs_correction:
+            deterministic_correction = self._score_correction(input_data)
+            if deterministic_correction is not None:
+                return ClaimCorrectionOutput(
+                    correction=deterministic_correction,
+                    raw_response=response,
+                )
+
         return ClaimCorrectionOutput(correction=correction, raw_response=response)
 
     def _build_request(self, input_data: ClaimCorrectionInput) -> LLMRequest:
@@ -189,3 +202,38 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
             return 0.0
 
         return max(0.0, min(1.0, confidence))
+
+    def _score_correction(self, input_data: ClaimCorrectionInput) -> ClaimCorrection | None:
+        score_correction = build_score_correction(
+            claim_text=input_data.claim.claim_text,
+            evidence_texts=[
+                f"{evidence.title or ''}\n{evidence.evidence_text}"
+                for evidence in input_data.evidence
+            ],
+        )
+        if score_correction is None:
+            return None
+
+        corrected_claim, original_score, corrected_score = score_correction
+        evidence_ids = [
+            stance.evidence_id
+            for stance in input_data.stances
+            if getattr(stance.stance, "value", str(stance.stance)) == "contradicts"
+        ]
+
+        return ClaimCorrection(
+            claim_id=input_data.claim.claim_id,
+            needs_correction=True,
+            corrected_claim=corrected_claim,
+            correction_type="numeric_correction",
+            changed_fields=[
+                ClaimCorrectionChange(
+                    field="score",
+                    original=original_score,
+                    corrected=corrected_score,
+                )
+            ],
+            confidence=0.9,
+            evidence_ids=evidence_ids,
+            rationale="Evidence for the same matchup reports a different score.",
+        )

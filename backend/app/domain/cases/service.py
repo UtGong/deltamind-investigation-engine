@@ -45,6 +45,8 @@ class CaseService:
             input_type=case.input_type,
             input_text=case.input_text,
             status=case.status,
+            created_at=case.created_at,
+            updated_at=case.updated_at,
         )
 
     def _make_title(self, input_text: str) -> str:

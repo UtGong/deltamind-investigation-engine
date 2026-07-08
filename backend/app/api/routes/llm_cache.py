@@ -6,11 +6,11 @@ router = APIRouter(prefix="/llm-cache", tags=["llm-cache"])
 
 
 @router.get("/stats")
-def get_llm_cache_stats() -> dict:
+async def get_llm_cache_stats() -> dict:
     return llm_cache_repository.stats()
 
 
 @router.delete("")
-def clear_llm_cache() -> dict:
+async def clear_llm_cache() -> dict:
     llm_cache_repository.clear()
     return {"cleared": True}

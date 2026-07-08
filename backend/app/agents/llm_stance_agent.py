@@ -4,6 +4,7 @@ import re
 from pydantic import BaseModel
 
 from app.agents.base import Agent
+from app.agents.score_facts import infer_score_stance
 from app.core.constants import StanceLabel
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
@@ -83,6 +84,19 @@ class LLMStanceAgent(Agent[LLMStanceInput, LLMStanceOutput]):
 
             if not rationale:
                 rationale = "The stance was classified from the provided evidence text."
+
+        score_stance = infer_score_stance(
+            claim_text=input_data.claim.claim_text,
+            evidence_text=f"{input_data.evidence.title or ''}\n{input_data.evidence.evidence_text}",
+        )
+        if score_stance == "supports":
+            stance_label = StanceLabel.SUPPORTS
+            confidence = max(confidence, 0.88)
+            rationale = "The evidence states the same match winner and score as the claim."
+        elif score_stance == "contradicts":
+            stance_label = StanceLabel.CONTRADICTS
+            confidence = max(confidence, 0.9)
+            rationale = "The evidence states the same matchup with a different score."
 
         stance = self._make_stance_result(
             claim=input_data.claim,

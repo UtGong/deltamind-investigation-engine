@@ -37,7 +37,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-if settings.database_backend.lower().strip() == "postgres":
+if settings.database_backend.lower().strip() in {"postgres", "sqlite"}:
     from app.domain.audit.postgres_repository import PostgresAuditRepository
 
     audit_repository = PostgresAuditRepository()

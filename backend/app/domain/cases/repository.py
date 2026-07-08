@@ -38,7 +38,7 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-if settings.database_backend.lower().strip() == "postgres":
+if settings.database_backend.lower().strip() in {"postgres", "sqlite"}:
     from app.domain.cases.postgres_repository import PostgresCaseRepository
 
     case_repository = PostgresCaseRepository()

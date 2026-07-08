@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.core.constants import ClaimType
 from app.domain.cases.models import utc_now
@@ -61,5 +61,8 @@ def compute_expires_at(
 def is_expired(expires_at: datetime | None) -> bool:
     if expires_at is None:
         return False
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
 
     return expires_at <= utc_now()

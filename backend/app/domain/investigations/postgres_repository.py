@@ -10,13 +10,13 @@ from app.db.models import (
     StanceRecord,
 )
 from app.db.session import SessionLocal
-from app.domain.investigations.repository import InvestigationRepository
+from app.domain.source_reliability.service import SourceReliabilityService
 from app.domain.verified_claims.models import normalize_claim_text
 from app.schemas.agent import EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.api import InvestigationResult
 
 
-class PostgresInvestigationRepository(InvestigationRepository):
+class PostgresInvestigationRepository:
     def save(self, result: InvestigationResult) -> InvestigationResult:
         result_json = result.model_dump(mode="json")
 
@@ -36,6 +36,11 @@ class PostgresInvestigationRepository(InvestigationRepository):
             case_record.investigation_result_json = result_json
 
             self._replace_materialized_rows(session, result)
+            session.flush()
+            SourceReliabilityService().observe_investigation_result(
+                result=result,
+                session=session,
+            )
 
             session.commit()
 

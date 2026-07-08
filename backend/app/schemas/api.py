@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +23,8 @@ class CaseResponse(BaseModel):
     input_type: InputType
     input_text: str
     status: CaseStatus
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class AsyncInvestigationResponse(BaseModel):

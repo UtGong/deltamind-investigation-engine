@@ -4,6 +4,7 @@ from app.db.models import (
     ClaimRecord,
     EvidenceRecord,
     SourceRecord,
+    SourceReliabilityRecord,
     StanceRecord,
 )
 from app.db.session import SessionLocal, check_database_connection
@@ -31,7 +32,10 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
         existing = session.get(DBCaseRecord, case_id)
         if existing is not None:
             session.delete(existing)
-            session.commit()
+        session.query(SourceReliabilityRecord).filter(
+            SourceReliabilityRecord.domain.in_(["example.org", "www.example.org"])
+        ).delete(synchronize_session=False)
+        session.commit()
 
     now = utc_now()
 
@@ -109,6 +113,13 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
         db_claim = session.get(ClaimRecord, claim.claim_id)
         db_source = session.get(SourceRecord, evidence.source_id)
         db_evidence = session.get(EvidenceRecord, evidence.evidence_id)
+        db_source_reliability = (
+            session.query(SourceReliabilityRecord)
+            .filter(SourceReliabilityRecord.domain == "example.org")
+            .filter(SourceReliabilityRecord.claim_type == ClaimType.RESULT.value)
+            .filter(SourceReliabilityRecord.topic == "Team Green")
+            .first()
+        )
 
         db_stances = (
             session.query(StanceRecord)
@@ -132,6 +143,12 @@ def test_postgres_investigation_save_materializes_claim_evidence_and_stance():
         assert db_source is not None
         assert db_source.source_id == evidence.source_id
         assert db_source.domain == "www.example.org"
+        assert db_source.reliability_prior is not None
+        assert db_source.reliability_prior > 0.9
+
+        assert db_source_reliability is not None
+        assert db_source_reliability.num_observations == 1
+        assert db_source_reliability.reliability_mean > 0.9
 
         assert db_evidence is not None
         assert db_evidence.case_id == case_id

@@ -13,6 +13,9 @@ class SourceCandidate(BaseModel):
     expected_source_type: SourceType = SourceType.UNKNOWN
     rationale: str
     priority: int = Field(default=5, ge=1, le=10)
+    source_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    confidence_source: str = "planner"
+    validation_terms: list[str] = Field(default_factory=list)
 
 
 class SearchQuery(BaseModel):
@@ -28,6 +31,7 @@ class SearchQuery(BaseModel):
     expected_source_type: SourceType = SourceType.UNKNOWN
     target_domains: list[str] = Field(default_factory=list)
     provider: str = "mock"
+    validation_terms: list[str] = Field(default_factory=list)
 
 
 class SearchPlan(BaseModel):

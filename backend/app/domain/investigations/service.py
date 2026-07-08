@@ -37,6 +37,7 @@ from app.agents.provided_text_evidence_agent import (
 )
 from app.agents.report_agent import ReportAgent, ReportAgentInput
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
+from app.agents.score_facts import extract_score_fact
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
 from app.algorithm.pivot.scoring import score_claim
 from app.domain.source_reliability.service import SourceReliabilityService
@@ -61,7 +62,7 @@ from app.domain.verified_claims.service import (
 from app.providers.llm.factory import get_llm_provider
 from app.providers.search.base import SearchProvider
 from app.providers.search.factory import get_free_search_provider, get_paid_search_provider
-from app.schemas.agent import EvidenceItem, PivotVerdict, StanceResult
+from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.api import InvestigationResult, VerificationError, VerificationStateResponse
 from app.schemas.correction import ClaimCorrection
 from app.schemas.search import SearchQuery, SearchResult
@@ -223,7 +224,10 @@ class InvestigationService:
                 },
             )
 
-            if cached_record is not None:
+            if cached_record is not None and not self._should_refresh_cached_claim(
+                claim=claim,
+                cached_record=cached_record,
+            ):
                 cached_evidence, evidence_id_map = self._rehydrate_cached_evidence(
                     claim=claim,
                     cached_record=cached_record,
@@ -307,6 +311,16 @@ class InvestigationService:
                     "claim_id": claim.claim_id,
                     "input_tokens": search_plan_output.raw_response.input_tokens,
                     "output_tokens": search_plan_output.raw_response.output_tokens,
+                    "source_candidates": [
+                        candidate.model_dump(mode="json")
+                        for candidate in search_plan.source_candidates
+                    ],
+                    "queries": [
+                        query.model_dump(mode="json")
+                        for query in search_plan.queries
+                    ],
+                    "should_use_paid_search": search_plan.should_use_paid_search,
+                    "paid_search_rationale": search_plan.paid_search_rationale,
                 },
             )
             self.audit.record_cost(
@@ -952,6 +966,8 @@ class InvestigationService:
                 "input_type": case.input_type,
                 "input_text": case.input_text,
                 "status": case.status,
+                "created_at": case.created_at,
+                "updated_at": case.updated_at,
             },
             investigation=result,
             trust_certificate=trust_certificate,
@@ -1128,6 +1144,20 @@ class InvestigationService:
             stances.append(StanceResult.model_validate(data))
 
         return stances
+
+    def _should_refresh_cached_claim(self, *, claim: AtomicClaim, cached_record) -> bool:
+        verdict = getattr(cached_record.verdict, "value", str(cached_record.verdict))
+        if verdict != "unverifiable":
+            return False
+
+        if extract_score_fact(claim.claim_text) is None:
+            return False
+
+        return (
+            cached_record.evidence_count == 0
+            or len(cached_record.evidence_snapshot or []) == 0
+            or len(cached_record.stance_snapshot or []) == 0
+        )
 
     def _get_provider_for_query(self, query: SearchQuery) -> SearchProvider:
         provider_name = (query.provider or "").strip().lower()

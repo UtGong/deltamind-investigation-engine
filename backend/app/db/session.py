@@ -1,7 +1,8 @@
 from collections.abc import Generator
+import importlib
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -39,6 +40,23 @@ def build_engine():
     )
 
 
+def initialize_database() -> None:
+    settings = get_settings()
+    if settings.database_backend.lower().strip() != "sqlite":
+        return
+
+    from app.db import models
+
+    if not Base.metadata.tables:
+        importlib.reload(models)
+
+    Base.metadata.create_all(bind=engine)
+
+
+def has_table(table_name: str) -> bool:
+    return inspect(engine).has_table(table_name)
+
+
 engine = build_engine()
 
 SessionLocal = sessionmaker(
@@ -63,6 +81,20 @@ def check_database_connection() -> dict:
     settings = get_settings()
 
     try:
+        if settings.database_backend.lower().strip() == "sqlite":
+            with engine.connect() as connection:
+                sqlite_version = connection.execute(text("SELECT sqlite_version()")).scalar_one()
+
+            return {
+                "database_backend": settings.database_backend,
+                "database_url_configured": bool(settings.database_url),
+                "connected": True,
+                "sqlite_version": sqlite_version,
+                "tables_initialized": has_table("cases"),
+                "pgvector_enabled": False,
+                "error": None,
+            }
+
         with engine.connect() as connection:
             version = connection.execute(text("SELECT version()")).scalar_one()
             vector_enabled = connection.execute(

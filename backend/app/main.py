@@ -30,6 +30,10 @@ def _dispose_db_engine_if_possible():
 
 @asynccontextmanager
 async def lifespan(app):
+    from app.db.session import initialize_database
+
+    initialize_database()
+
     yield
 
     for import_path, attr_name in [
@@ -57,7 +61,7 @@ app.include_router(api_router, prefix=settings.api_prefix)
 
 
 @app.get("/health")
-def health_check() -> dict[str, str]:
+async def health_check() -> dict[str, str]:
     return {
         "status": "ok",
         "service": settings.app_name,

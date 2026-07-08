@@ -13,3 +13,8 @@ body {
 button, textarea, input {
   font: inherit;
 }
+
+::selection {
+  background: #67e8f9;
+  color: #020617;
+}

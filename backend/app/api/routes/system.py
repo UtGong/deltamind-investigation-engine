@@ -8,7 +8,7 @@ router = APIRouter(prefix="/system", tags=["system"])
 
 
 @router.get("/status", response_model=SystemStatusResponse)
-def get_system_status() -> SystemStatusResponse:
+async def get_system_status() -> SystemStatusResponse:
     settings = get_settings()
     free_search_provider = get_free_search_provider()
 

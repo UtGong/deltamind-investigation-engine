@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -21,6 +22,8 @@ from app.db.session import Base
 
 settings = get_settings()
 VECTOR_DIM = settings.embedding_dimension
+JSON_DOCUMENT = JSON().with_variant(JSONB(), "postgresql")
+VECTOR_DOCUMENT = JSON().with_variant(Vector(VECTOR_DIM), "postgresql")
 
 
 class TimestampMixin:
@@ -48,8 +51,8 @@ class CaseRecord(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     case_verdict: Mapped[str | None] = mapped_column(String(50))
     confidence: Mapped[float | None] = mapped_column(Float)
-    investigation_result_json: Mapped[dict | None] = mapped_column(JSONB)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    investigation_result_json: Mapped[dict | None] = mapped_column(JSON_DOCUMENT)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
     claims: Mapped[list["ClaimRecord"]] = relationship(
         back_populates="case",
@@ -78,7 +81,7 @@ class ClaimRecord(Base, TimestampMixin):
     correctness_score: Mapped[float | None] = mapped_column(Float)
     trust_score: Mapped[float | None] = mapped_column(Float)
     uncertainty_score: Mapped[float | None] = mapped_column(Float)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
     case: Mapped["CaseRecord"] = relationship(back_populates="claims")
 
@@ -92,7 +95,7 @@ class SourceRecord(Base, TimestampMixin):
     source_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     url: Mapped[str | None] = mapped_column(Text)
     reliability_prior: Mapped[float | None] = mapped_column(Float)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class EvidenceRecord(Base, TimestampMixin):
@@ -115,7 +118,7 @@ class EvidenceRecord(Base, TimestampMixin):
     independence: Mapped[float | None] = mapped_column(Float)
     freshness: Mapped[float | None] = mapped_column(Float)
     specificity: Mapped[float | None] = mapped_column(Float)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class StanceRecord(Base, TimestampMixin):
@@ -130,7 +133,7 @@ class StanceRecord(Base, TimestampMixin):
     explanation: Mapped[str | None] = mapped_column(Text)
     provider: Mapped[str | None] = mapped_column(String(120))
     model: Mapped[str | None] = mapped_column(String(160))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class GraphEdgeRecord(Base, TimestampMixin):
@@ -144,7 +147,7 @@ class GraphEdgeRecord(Base, TimestampMixin):
     dst_node_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     edge_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     edge_weight: Mapped[float | None] = mapped_column(Float)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
     __table_args__ = (
         UniqueConstraint(
@@ -166,9 +169,9 @@ class AgentRunRecord(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    input_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    output_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    input_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    output_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
     error_message: Mapped[str | None] = mapped_column(Text)
 
 
@@ -182,7 +185,7 @@ class CostLogRecord(Base, TimestampMixin):
     units: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     unit_name: Mapped[str | None] = mapped_column(String(80))
     estimated_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class LLMCacheRecord(Base, TimestampMixin):
@@ -198,7 +201,7 @@ class LLMCacheRecord(Base, TimestampMixin):
     estimated_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class VerifiedClaimRecord(Base, TimestampMixin):
@@ -226,10 +229,10 @@ class VerifiedClaimRecord(Base, TimestampMixin):
     freshness_policy: Mapped[str] = mapped_column(String(120), nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
-    evidence_snapshot: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
-    stance_snapshot: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    evidence_snapshot: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
+    stance_snapshot: Mapped[list] = mapped_column(JSON_DOCUMENT, nullable=False, default=list)
 
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class ModelPredictionRecord(Base, TimestampMixin):
@@ -247,8 +250,8 @@ class ModelPredictionRecord(Base, TimestampMixin):
     support_score: Mapped[float | None] = mapped_column(Float)
     contradiction_score: Mapped[float | None] = mapped_column(Float)
     verdict: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
-    features_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    prediction_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    features_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
+    prediction_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class SourceReliabilityRecord(Base, TimestampMixin):
@@ -262,7 +265,7 @@ class SourceReliabilityRecord(Base, TimestampMixin):
     reliability_uncertainty: Mapped[float] = mapped_column(Float, nullable=False)
     num_observations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
     __table_args__ = (
         UniqueConstraint(
@@ -285,7 +288,7 @@ class TrainingLabelRecord(Base, TimestampMixin):
     verdict_label: Mapped[str | None] = mapped_column(String(80), index=True)
     trust_label: Mapped[float | None] = mapped_column(Float)
     annotator_id: Mapped[str | None] = mapped_column(String(120))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class ClaimEmbeddingRecord(Base, TimestampMixin):
@@ -293,8 +296,8 @@ class ClaimEmbeddingRecord(Base, TimestampMixin):
 
     claim_id: Mapped[str] = mapped_column(String(120), primary_key=True)
     embedding_model: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(VECTOR_DIM))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_DOCUMENT)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 class EvidenceEmbeddingRecord(Base, TimestampMixin):
@@ -302,8 +305,8 @@ class EvidenceEmbeddingRecord(Base, TimestampMixin):
 
     evidence_id: Mapped[str] = mapped_column(String(160), primary_key=True)
     embedding_model: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(VECTOR_DIM))
-    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_DOCUMENT)
+    metadata_json: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
 
 Index("ix_evidence_claim_source", EvidenceRecord.claim_id, EvidenceRecord.source_id)

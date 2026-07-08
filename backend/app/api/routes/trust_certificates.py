@@ -101,12 +101,12 @@ def _sort_status_cards(cards, *, sort_by: str = "updated_at", sort_order: str = 
 
 
 @router.get("/recent", response_model=list[TrustCertificateRegistryItem])
-def list_recent_trust_certificates(limit: int = 20):
+async def list_recent_trust_certificates(limit: int = 20):
     return trust_certificate_registry.list_recent(limit=limit)
 
 
 @router.get("/recent/status-cards", response_model=list[TrustCertificateStatusCard])
-def list_recent_trust_certificate_status_cards(
+async def list_recent_trust_certificate_status_cards(
     limit: int = 20,
     lifecycle_status: str | None = None,
     action_required: str | None = None,
@@ -129,7 +129,7 @@ def list_recent_trust_certificate_status_cards(
 
 
 @router.get("/recent/status-cards/page", response_model=TrustCertificateStatusCardPage)
-def list_recent_trust_certificate_status_card_page(
+async def list_recent_trust_certificate_status_card_page(
     limit: int = 20,
     offset: int = 0,
     scan_limit: int = 100,
@@ -176,7 +176,7 @@ def list_recent_trust_certificate_status_card_page(
 
 
 @router.get("/recent/dashboard-summary", response_model=TrustCertificateDashboardSummary)
-def get_recent_trust_certificate_dashboard_summary(
+async def get_recent_trust_certificate_dashboard_summary(
     limit: int = 20,
     lifecycle_status: str | None = None,
     action_required: str | None = None,
@@ -233,18 +233,18 @@ def get_recent_trust_certificate_dashboard_summary(
 
 
 @router.get("/{case_id}", response_model=TrustCertificate)
-def get_trust_certificate(case_id: str):
+async def get_trust_certificate(case_id: str):
     return _get_trust_certificate_or_404(case_id)
 
 
 @router.get("/{case_id}/status-card", response_model=TrustCertificateStatusCard)
-def get_trust_certificate_status_card(case_id: str):
+async def get_trust_certificate_status_card(case_id: str):
     trust_certificate = _get_trust_certificate_or_404(case_id)
     return build_trust_certificate_status_card(trust_certificate)
 
 
 @router.get("/{case_id}/lifecycle", response_model=TrustCertificateLifecycleResponse)
-def get_trust_certificate_lifecycle(case_id: str):
+async def get_trust_certificate_lifecycle(case_id: str):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
     return TrustCertificateLifecycleResponse(
@@ -259,7 +259,7 @@ def get_trust_certificate_lifecycle(case_id: str):
 
 
 @router.get("/{case_id}/reverification-summary", response_model=TrustCertificateReverificationSummary)
-def get_trust_certificate_reverification_summary(case_id: str):
+async def get_trust_certificate_reverification_summary(case_id: str):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
     events = list(trust_certificate.lifecycle_events or [])
@@ -313,7 +313,7 @@ def get_trust_certificate_reverification_summary(case_id: str):
 
 
 @router.post("/{case_id}/simulate-downgrade", response_model=TrustCertificate)
-def simulate_trust_certificate_downgrade(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
+async def simulate_trust_certificate_downgrade(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
     payload = payload or TrustCertificateLifecycleActionRequest()
@@ -332,7 +332,7 @@ def simulate_trust_certificate_downgrade(case_id: str, payload: TrustCertificate
 
 
 @router.post("/{case_id}/downgrade", response_model=TrustCertificate)
-def downgrade_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
+async def downgrade_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
     payload = payload or TrustCertificateLifecycleActionRequest()
@@ -357,7 +357,7 @@ def downgrade_trust_certificate(case_id: str, payload: TrustCertificateLifecycle
 
 
 @router.post("/{case_id}/reactivate", response_model=TrustCertificate)
-def reactivate_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
+async def reactivate_trust_certificate(case_id: str, payload: TrustCertificateLifecycleActionRequest | None = None):
     trust_certificate = _get_trust_certificate_or_404(case_id)
 
     payload = payload or TrustCertificateLifecycleActionRequest()
@@ -382,7 +382,7 @@ def reactivate_trust_certificate(case_id: str, payload: TrustCertificateLifecycl
 
 
 @router.post("/{case_id}/reverify", response_model=TrustCertificate)
-def reverify_trust_certificate(case_id: str, payload: TrustCertificateReverificationRequest | None = None):
+async def reverify_trust_certificate(case_id: str, payload: TrustCertificateReverificationRequest | None = None):
     previous_certificate = _get_trust_certificate_or_404(case_id)
 
     payload = payload or TrustCertificateReverificationRequest()

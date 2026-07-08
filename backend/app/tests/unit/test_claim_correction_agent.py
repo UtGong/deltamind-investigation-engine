@@ -124,3 +124,66 @@ def test_claim_correction_agent_does_not_correct_unverifiable_secret_claim():
     assert correction.needs_correction is False
     assert correction.corrected_claim is None
     assert correction.correction_type == "none"
+
+
+def test_claim_correction_agent_falls_back_to_score_correction_when_llm_declines():
+    claim = AtomicClaim(
+        claim_id="C3",
+        claim_text="Belgium beats USA with a 3-1 win in the Round of 16",
+        claim_type=ClaimType.RESULT,
+        subject="Belgium",
+        predicate="beats",
+        object="USA 3-1 Round of 16",
+        confidence=1.0,
+    )
+    evidence = [
+        EvidenceItem(
+            evidence_id="E3",
+            claim_id="C3",
+            source_id="source_news",
+            title="Belgium defeats United States",
+            evidence_text=(
+                "Belgium's 4-1 victory over the United States in the Round of 16 "
+                "sent the U.S. team out of the tournament."
+            ),
+            reliability=0.9,
+            independence=0.8,
+            freshness=0.8,
+            specificity=0.95,
+        )
+    ]
+    stances = [
+        StanceResult(
+            claim_id="C3",
+            evidence_id="E3",
+            stance=StanceLabel.CONTRADICTS,
+            confidence=0.9,
+            reason="The evidence reports the same matchup with a 4-1 score.",
+        )
+    ]
+    verdict = PivotVerdict(
+        claim_id="C3",
+        verdict=VerdictLabel.CONTRADICTED,
+        confidence=0.8,
+        support_score=0.0,
+        contradiction_score=0.8,
+        uncertainty_score=0.2,
+        reason="The claim is contradicted by the available evidence.",
+    )
+
+    output = ClaimCorrectionAgent().run(
+        ClaimCorrectionInput(
+            claim=claim,
+            evidence=evidence,
+            stances=stances,
+            verdict=verdict,
+        )
+    )
+
+    correction = output.correction
+    assert correction.needs_correction is True
+    assert correction.corrected_claim == "Belgium beats USA with a 4-1 win in the Round of 16"
+    assert correction.correction_type == "numeric_correction"
+    assert correction.changed_fields[0].original == "3-1"
+    assert correction.changed_fields[0].corrected == "4-1"
+    assert correction.evidence_ids == ["E3"]

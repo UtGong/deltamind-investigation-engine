@@ -1,11 +1,14 @@
 import json
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
 from app.agents.base import Agent
 from app.core.config import get_settings
-from app.core.constants import SourceType
+from app.core.constants import ClaimType, SourceType
+from app.domain.source_reliability.service import SourceReliabilityService
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
 from app.schemas.agent import AtomicClaim
@@ -20,6 +23,14 @@ class LLMSearchPlanningInput(BaseModel):
 class LLMSearchPlanningOutput(BaseModel):
     search_plan: SearchPlan
     raw_response: LLMResponse
+
+
+@dataclass(frozen=True)
+class ValidationProfile:
+    subject: str
+    context: str | None
+    terms: list[str]
+    candidate_domains: list[tuple[str, SourceType, str]]
 
 
 class LLMSearchPlanningAgent(
@@ -61,12 +72,18 @@ class LLMSearchPlanningAgent(
                         "7. Search queries should be neutral retrieval requests, not verdicts.\n"
                         "8. Paid search should be requested only when free/direct retrieval is unlikely to be enough.\n"
                         "9. For query.provider, use configured_free_provider for free queries and configured_paid_provider for paid queries.\n"
-                        "10. Do not use provider names like mock unless the user explicitly asks for mock mode.\n\n"
+                        "10. Do not use provider names like mock unless the user explicitly asks for mock mode.\n"
+                        "11. Never output placeholder domains such as example.com, example.org, test.com, localhost, or invalid domains.\n\n"
+                        "Decomposition policy:\n"
+                        "- Keep the central subject/event in every query. Do not query only a fragment like a score.\n"
+                        "- Identify validation terms such as matchup, date, round, score, quote, amount, entity, location, and source-of-record.\n"
+                        "- For each validation term, include the central subject/event plus that term in a query.\n"
+                        "- If the claim implies a competition or domain from context, state it as a hypothesis in the query rather than omitting it.\n\n"
                         "Good source_candidate example when an exact source is known:\n"
                         "{\n"
                         '  "name": "Official organization announcement",\n'
-                        '  "domain": "example.org",\n'
-                        '  "url": "https://example.org/news/source-article",\n'
+                        '  "domain": "nba.com",\n'
+                        '  "url": "https://www.nba.com/news/source-article",\n'
                         '  "expected_source_type": "official",\n'
                         '  "rationale": "Official source likely containing the relevant evidence.",\n'
                         '  "priority": 1\n'
@@ -74,7 +91,7 @@ class LLMSearchPlanningAgent(
                         "If you only know the domain, do this:\n"
                         "{\n"
                         '  "name": "Official organization website",\n'
-                        '  "domain": "example.org",\n'
+                        '  "domain": "fifa.com",\n'
                         '  "url": null,\n'
                         '  "expected_source_type": "official",\n'
                         '  "rationale": "Official source, but exact article URL is not known.",\n'
@@ -107,7 +124,7 @@ class LLMSearchPlanningAgent(
                         '      "purpose": "string",\n'
                         '      "cost_tier": "free",\n'
                         '      "expected_source_type": "official",\n'
-                        '      "target_domains": ["example.org"],\n'
+                        '      "target_domains": ["fifa.com"],\n'
                         '      "provider": "configured_free_provider"\n'
                         "    }\n"
                         "  ],\n"
@@ -133,6 +150,7 @@ class LLMSearchPlanningAgent(
         search_plan = self._parse_search_plan(
             claim_id=claim.claim_id,
             claim_text=claim.claim_text,
+            claim=claim,
             content=response.content,
         )
 
@@ -145,12 +163,13 @@ class LLMSearchPlanningAgent(
         self,
         claim_id: str,
         claim_text: str,
+        claim: AtomicClaim | None,
         content: str,
     ) -> SearchPlan:
         payload = self._safe_json_loads(content)
 
         if payload is None or not isinstance(payload, dict):
-            return self._fallback_plan(claim_id, claim_text)
+            return self._fallback_plan(claim_id, claim_text, claim=claim)
 
         source_candidates = self._parse_source_candidates(
             payload.get("source_candidates", [])
@@ -160,13 +179,16 @@ class LLMSearchPlanningAgent(
             raw_queries=payload.get("queries", []),
         )
 
+        if not source_candidates and not queries:
+            return self._fallback_plan(claim_id, claim_text, claim=claim)
+
         should_use_paid_search = bool(payload.get("should_use_paid_search", False))
         max_paid_search_calls = self._parse_nonnegative_int(
             payload.get("max_paid_search_calls"),
             default=0,
         )
 
-        return SearchPlan(
+        search_plan = SearchPlan(
             claim_id=claim_id,
             source_candidates=source_candidates,
             queries=queries,
@@ -174,6 +196,8 @@ class LLMSearchPlanningAgent(
             paid_search_rationale=payload.get("paid_search_rationale"),
             max_paid_search_calls=max_paid_search_calls,
         )
+
+        return self._sanitize_and_enrich_plan(search_plan, claim_text, claim=claim)
 
     def _parse_source_candidates(self, raw_candidates: object) -> list[SourceCandidate]:
         if not isinstance(raw_candidates, list):
@@ -199,6 +223,12 @@ class LLMSearchPlanningAgent(
                     ),
                     rationale=rationale,
                     priority=self._parse_priority(raw_candidate.get("priority")),
+                    source_confidence=self._parse_confidence(
+                        raw_candidate.get("source_confidence"),
+                        default=0.5,
+                    ),
+                    confidence_source=str(raw_candidate.get("confidence_source") or "planner"),
+                    validation_terms=self._parse_terms(raw_candidate.get("validation_terms")),
                 )
             )
 
@@ -254,6 +284,7 @@ class LLMSearchPlanningAgent(
                         if str(domain).strip()
                     ],
                     provider=provider,
+                    validation_terms=self._parse_terms(raw_query.get("validation_terms")),
                 )
             )
 
@@ -282,30 +313,19 @@ class LLMSearchPlanningAgent(
 
         return None
 
-    def _fallback_plan(self, claim_id: str, claim_text: str) -> SearchPlan:
+    def _fallback_plan(
+        self,
+        claim_id: str,
+        claim_text: str,
+        *,
+        claim: AtomicClaim | None = None,
+    ) -> SearchPlan:
+        profile = self._build_validation_profile(claim_text, claim=claim)
+
         return SearchPlan(
             claim_id=claim_id,
-            source_candidates=[],
-            queries=[
-                SearchQuery(
-                    query_id=f"{claim_id}_query_1",
-                    claim_id=claim_id,
-                    query=f"{claim_text} official source",
-                    purpose="Fallback free query for a primary or official source.",
-                    cost_tier="free",
-                    expected_source_type=SourceType.UNKNOWN,
-                    provider="configured_free_provider",
-                ),
-                SearchQuery(
-                    query_id=f"{claim_id}_query_2",
-                    claim_id=claim_id,
-                    query=f"{claim_text} independent report",
-                    purpose="Fallback free query for independent corroboration.",
-                    cost_tier="free",
-                    expected_source_type=SourceType.UNKNOWN,
-                    provider="configured_free_provider",
-                ),
-            ],
+            source_candidates=self._source_candidates_for_profile(profile),
+            queries=self._queries_for_profile(claim_id, claim_text, profile),
             should_use_paid_search=False,
             paid_search_rationale="Fallback plan avoids paid search.",
             max_paid_search_calls=0,
@@ -327,6 +347,14 @@ class LLMSearchPlanningAgent(
 
         return max(1, min(10, priority))
 
+    def _parse_confidence(self, value: object, *, default: float) -> float:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return default
+
+        return max(0.0, min(1.0, parsed))
+
     def _parse_nonnegative_int(self, value: object, default: int) -> int:
         try:
             parsed = int(value)
@@ -334,6 +362,18 @@ class LLMSearchPlanningAgent(
             return default
 
         return max(0, parsed)
+
+    def _parse_terms(self, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+
+        terms = []
+        for item in value:
+            term = str(item).strip()
+            if term:
+                terms.append(term)
+
+        return terms[:8]
 
     def _optional_str(self, value: object) -> str | None:
         if value is None:
@@ -352,6 +392,284 @@ class LLMSearchPlanningAgent(
             return None
 
         if not cleaned.startswith(("http://", "https://")):
+            return None
+
+        return cleaned
+
+    def _sanitize_and_enrich_plan(
+        self,
+        plan: SearchPlan,
+        claim_text: str,
+        *,
+        claim: AtomicClaim | None,
+    ) -> SearchPlan:
+        profile = self._build_validation_profile(claim_text, claim=claim)
+
+        source_candidates = [
+            self._enrich_candidate(candidate, profile)
+            for candidate in plan.source_candidates
+            if self._is_usable_candidate(candidate)
+        ]
+        queries = [
+            query
+            for query in plan.queries
+            if self._is_usable_query(query, profile)
+        ]
+
+        fallback = self._fallback_plan(plan.claim_id, claim_text, claim=claim)
+
+        domains = {
+            self._normalize_domain(candidate.domain or candidate.url)
+            for candidate in source_candidates
+        }
+        for candidate in fallback.source_candidates:
+            domain = self._normalize_domain(candidate.domain or candidate.url)
+            if domain and domain not in domains:
+                source_candidates.append(candidate)
+                domains.add(domain)
+
+        if len(queries) < len(profile.terms):
+            query_texts = {query.query.lower() for query in queries}
+            for query in fallback.queries:
+                if query.query.lower() not in query_texts:
+                    queries.append(query)
+                    query_texts.add(query.query.lower())
+
+        return plan.model_copy(
+            update={
+                "source_candidates": sorted(
+                    source_candidates,
+                    key=lambda candidate: (candidate.priority, -candidate.source_confidence),
+                )[:8],
+                "queries": queries[:10],
+            }
+        )
+
+    def _build_validation_profile(
+        self,
+        claim_text: str,
+        *,
+        claim: AtomicClaim | None,
+    ) -> ValidationProfile:
+        subject = self._central_subject(claim_text, claim=claim)
+        context = self._context_hint(claim_text, claim=claim)
+        terms = self._validation_terms(claim_text)
+
+        return ValidationProfile(
+            subject=subject,
+            context=context,
+            terms=terms,
+            candidate_domains=self._candidate_domains_for_claim(
+                claim_text,
+                claim=claim,
+                context=context,
+            ),
+        )
+
+    def _central_subject(self, claim_text: str, *, claim: AtomicClaim | None) -> str:
+        if claim and claim.subject and claim.object:
+            return f"{claim.subject} {claim.object}".strip()
+        if claim and claim.subject:
+            return claim.subject
+
+        matchup = re.search(
+            r"\b([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\s+(?:beat|beats|defeated|defeats|vs\.?|versus)\s+([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\b",
+            claim_text,
+        )
+        if matchup:
+            return f"{matchup.group(1)} vs {matchup.group(2)}"
+
+        words = re.findall(r"\b[A-Z][A-Za-z0-9']+\b|USA|U\.S\.", claim_text)
+        if words:
+            return " ".join(words[:4])
+
+        return claim_text
+
+    def _validation_terms(self, claim_text: str) -> list[str]:
+        terms: list[str] = []
+        lowered = claim_text.lower()
+
+        score = re.search(r"\b\d+\s*[-–]\s*\d+\b", claim_text)
+        if score:
+            terms.append(f"score {score.group(0)}")
+
+        round_match = re.search(r"\bround of \d+\b", lowered)
+        if round_match:
+            terms.append(round_match.group(0))
+
+        if any(word in lowered for word in ["beat", "beats", "defeated", "defeats", "won", "lost"]):
+            terms.append("match result")
+
+        year = re.search(r"\b(?:19|20)\d{2}\b", claim_text)
+        if year:
+            terms.append(f"date {year.group(0)}")
+
+        return list(dict.fromkeys(terms or ["claim verification"]))
+
+    def _context_hint(self, claim_text: str, *, claim: AtomicClaim | None) -> str | None:
+        lowered = claim_text.lower()
+        current_year = datetime.now(timezone.utc).year
+
+        if (
+            claim is not None
+            and claim.claim_type == ClaimType.RESULT
+            and "round of 16" in lowered
+            and re.search(r"\b(?:usa|us|u\.s\.|united states|belgium)\b", lowered)
+        ):
+            return f"{current_year} FIFA World Cup"
+
+        if "world cup" in lowered:
+            return "FIFA World Cup"
+
+        return None
+
+    def _candidate_domains_for_claim(
+        self,
+        claim_text: str,
+        *,
+        claim: AtomicClaim | None,
+        context: str | None,
+    ) -> list[tuple[str, SourceType, str]]:
+        lowered = claim_text.lower()
+
+        if claim is not None and claim.claim_type in {ClaimType.RESULT, ClaimType.SCHEDULE}:
+            if "world cup" in lowered or "round of 16" in lowered or (context and "World Cup" in context):
+                return [
+                    ("fifa.com", SourceType.OFFICIAL, "Official FIFA match and competition source."),
+                    ("espn.com", SourceType.TRUSTED_MEDIA, "Trusted sports media with match reports and score pages."),
+                    ("theathletic.com", SourceType.TRUSTED_MEDIA, "Trusted sports newsroom for match reports."),
+                    ("soccerway.com", SourceType.DATABASE, "Structured football results database."),
+                ]
+
+            return [
+                ("espn.com", SourceType.TRUSTED_MEDIA, "Trusted sports media with score coverage."),
+                ("soccerway.com", SourceType.DATABASE, "Structured football results database."),
+            ]
+
+        if claim is not None and claim.claim_type == ClaimType.TRANSFER:
+            return [
+                ("espn.com", SourceType.TRUSTED_MEDIA, "Trusted sports media for transfer reporting."),
+                ("theathletic.com", SourceType.TRUSTED_MEDIA, "Trusted sports newsroom for transfer reporting."),
+            ]
+
+        return [
+            ("reuters.com", SourceType.TRUSTED_MEDIA, "Trusted general news source."),
+            ("apnews.com", SourceType.TRUSTED_MEDIA, "Trusted general news source."),
+            ("wikipedia.org", SourceType.AGGREGATOR, "Broad background only; should not be the sole verification source."),
+        ]
+
+    def _source_candidates_for_profile(self, profile: ValidationProfile) -> list[SourceCandidate]:
+        candidates: list[SourceCandidate] = []
+
+        for index, (domain, source_type, rationale) in enumerate(profile.candidate_domains, start=1):
+            candidate = SourceCandidate(
+                name=domain,
+                domain=domain,
+                expected_source_type=source_type,
+                rationale=rationale,
+                priority=index,
+                validation_terms=profile.terms,
+                source_confidence=0.5,
+                confidence_source="planner_prior",
+            )
+            candidates.append(self._enrich_candidate(candidate, profile))
+
+        return candidates
+
+    def _queries_for_profile(
+        self,
+        claim_id: str,
+        claim_text: str,
+        profile: ValidationProfile,
+    ) -> list[SearchQuery]:
+        target_domains = [
+            domain
+            for domain, _, _ in profile.candidate_domains
+        ][:3]
+        context = f" {profile.context}" if profile.context else ""
+        queries: list[SearchQuery] = []
+
+        for index, term in enumerate(profile.terms, start=1):
+            queries.append(
+                SearchQuery(
+                    query_id=f"{claim_id}_query_{index}",
+                    claim_id=claim_id,
+                    query=f"{profile.subject}{context} {term}".strip(),
+                    purpose=f"Validate {term} against the central subject/event.",
+                    cost_tier="free",
+                    expected_source_type=SourceType.TRUSTED_MEDIA,
+                    target_domains=target_domains,
+                    provider="configured_free_provider",
+                    validation_terms=[term],
+                )
+            )
+
+        queries.append(
+            SearchQuery(
+                query_id=f"{claim_id}_query_{len(queries) + 1}",
+                claim_id=claim_id,
+                query=f"{claim_text} official source",
+                purpose="Find a direct source while preserving the full claim context.",
+                cost_tier="free",
+                expected_source_type=SourceType.OFFICIAL,
+                target_domains=target_domains[:1],
+                provider="configured_free_provider",
+                validation_terms=profile.terms,
+            )
+        )
+
+        return queries
+
+    def _is_usable_candidate(self, candidate: SourceCandidate) -> bool:
+        domain = self._normalize_domain(candidate.domain or candidate.url)
+        return bool(domain and domain not in {"example.com", "example.org", "example.net", "test.com", "localhost"})
+
+    def _is_usable_query(self, query: SearchQuery, profile: ValidationProfile) -> bool:
+        query_text = query.query.lower().strip()
+        if len(query_text.split()) < 3:
+            return False
+
+        subject_tokens = {
+            token.lower()
+            for token in re.findall(r"[A-Za-z0-9]+", profile.subject)
+            if len(token) > 1
+        }
+        query_tokens = set(re.findall(r"[a-zA-Z0-9]+", query_text))
+
+        return bool(subject_tokens.intersection(query_tokens))
+
+    def _enrich_candidate(self, candidate: SourceCandidate, profile: ValidationProfile) -> SourceCandidate:
+        domain = self._normalize_domain(candidate.domain or candidate.url)
+        if not domain:
+            return candidate
+
+        resolution = SourceReliabilityService().resolve(
+            url=f"https://{domain}",
+            source_id=None,
+            claim_type="result",
+            topic=profile.context,
+            fallback=candidate.source_confidence,
+        )
+
+        return candidate.model_copy(
+            update={
+                "domain": domain,
+                "source_confidence": resolution.reliability,
+                "confidence_source": resolution.source,
+                "validation_terms": candidate.validation_terms or profile.terms,
+            }
+        )
+
+    def _normalize_domain(self, value: str | None) -> str | None:
+        if not value:
+            return None
+
+        cleaned = value.strip().lower()
+        cleaned = re.sub(r"^https?://", "", cleaned)
+        cleaned = cleaned.split("/", 1)[0]
+        cleaned = cleaned.removeprefix("www.")
+
+        if "." not in cleaned:
             return None
 
         return cleaned
