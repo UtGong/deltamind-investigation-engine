@@ -33,6 +33,13 @@ class InsufficientStanceLLMProvider(LLMProvider):
         )
 
 
+class TimeoutStanceLLMProvider(LLMProvider):
+    name = "timeout_stance_llm"
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        raise TimeoutError("timed out")
+
+
 def make_claim() -> AtomicClaim:
     return AtomicClaim(
         claim_id="claim_1",
@@ -103,3 +110,21 @@ def test_llm_stance_agent_overrides_insufficient_for_score_contradiction():
 
     assert output.stance.stance == StanceLabel.CONTRADICTS
     assert output.stance.confidence == 0.9
+
+
+def test_llm_stance_agent_falls_back_when_provider_times_out():
+    agent = LLMStanceAgent(llm_provider=TimeoutStanceLLMProvider())
+
+    output = agent.run(
+        LLMStanceInput(
+            claim=make_claim(),
+            evidence=make_evidence(),
+        )
+    )
+
+    assert output.raw_response.provider == "timeout_stance_llm"
+    assert output.raw_response.model == "fallback_local_stance"
+    assert output.raw_response.metadata["fallback_used"] is True
+    assert output.raw_response.metadata["error_type"] == "TimeoutError"
+    assert output.stance.stance == StanceLabel.SUPPORTS
+    assert output.stance.confidence == 0.72

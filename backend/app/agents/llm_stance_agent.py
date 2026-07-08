@@ -67,13 +67,35 @@ class LLMStanceAgent(Agent[LLMStanceInput, LLMStanceOutput]):
             response_format="json",
         )
 
-        response = self.llm_provider.generate(request)
-        payload = self._safe_json_loads(response.content)
+        try:
+            response = self.llm_provider.generate(request)
+            payload = self._safe_json_loads(response.content)
+            fallback_reason = None
+        except Exception as error:
+            response = LLMResponse(
+                content="",
+                provider=getattr(self.llm_provider, "name", "unknown_llm_provider"),
+                model="fallback_local_stance",
+                input_tokens=0,
+                output_tokens=0,
+                estimated_cost_usd=0.0,
+                metadata={
+                    "fallback_used": True,
+                    "fallback_reason": "llm_provider_error",
+                    "error_type": type(error).__name__,
+                    "error_message": str(error),
+                },
+            )
+            payload = None
+            fallback_reason = (
+                "Fallback stance classification was used because the LLM provider "
+                f"failed with {type(error).__name__}: {error}."
+            )
 
         if payload is None:
             stance_label = self._fallback_stance(input_data)
-            confidence = 0.35
-            rationale = (
+            confidence = self._fallback_confidence(stance_label)
+            rationale = fallback_reason or (
                 "Fallback stance classification was used because the LLM response "
                 "was not valid stance JSON."
             )
@@ -185,6 +207,15 @@ class LLMStanceAgent(Agent[LLMStanceInput, LLMStanceOutput]):
             return StanceLabel.IRRELEVANT
 
         return StanceLabel.INSUFFICIENT
+
+    def _fallback_confidence(self, stance_label: StanceLabel) -> float:
+        if stance_label == StanceLabel.SUPPORTS:
+            return 0.72
+        if stance_label == StanceLabel.PARTIALLY_SUPPORTS:
+            return 0.55
+        if stance_label == StanceLabel.IRRELEVANT:
+            return 0.45
+        return 0.35
 
     def _tokens(self, text: str) -> set[str]:
         stopwords = {
