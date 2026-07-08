@@ -55,9 +55,10 @@ class LLMClaimDecompositionAgent(
                         "6. Do not use generic claim_type values like fact or statement.\n"
                         "7. confidence MUST be a number from 0.0 to 1.0, not text.\n"
                         "8. If subject, predicate, or object is unclear, use null.\n\n"
-                        "9. For sports result claims, keep qualifiers such as score, round, tournament, "
-                        "season, and date attached to the central matchup. Do not split phrases like "
-                        "'with a 3-1 win' or 'in the Round of 16' into standalone claims.\n\n"
+                        "9. Keep dependent qualifiers such as dates, amounts, locations, sources, "
+                        "rounds, scores, and context phrases attached to the factual statement they "
+                        "modify. Do not split fragments like 'with 3.2 million users', 'in Paris', "
+                        "'on June 10', or 'according to the filing' into standalone claims.\n\n"
                         "Return exactly this JSON object shape:\n"
                         "{\n"
                         '  "claims": [\n'
@@ -205,69 +206,109 @@ class LLMClaimDecompositionAgent(
         original_input: str,
         claims: list[AtomicClaim],
     ) -> list[AtomicClaim]:
-        if not self._is_compact_sports_result(original_input):
+        if len(claims) <= 1:
             return claims
 
-        return [
-            AtomicClaim(
-                claim_id=f"{case_id}_claim_1",
-                claim_text=" ".join(original_input.strip().split()),
-                claim_type=ClaimType.RESULT,
-                subject=self._matchup_subject(original_input),
-                predicate="result",
-                object=self._matchup_object(original_input),
-                confidence=max([claim.confidence for claim in claims] + [0.75]),
+        repaired: list[AtomicClaim] = []
+        pending_fragments: list[AtomicClaim] = []
+
+        for claim in claims:
+            if self._is_dependent_fragment(claim):
+                pending_fragments.append(claim)
+                continue
+
+            if repaired and pending_fragments:
+                repaired[-1] = self._merge_claim_with_fragments(
+                    repaired[-1],
+                    pending_fragments,
+                )
+                pending_fragments = []
+
+            repaired.append(claim)
+
+        if repaired and pending_fragments:
+            repaired[-1] = self._merge_claim_with_fragments(
+                repaired[-1],
+                pending_fragments,
             )
+
+        if not repaired:
+            return claims
+
+        if len(repaired) == 1 and self._is_single_statement(original_input):
+            repaired[0] = repaired[0].model_copy(
+                update={"claim_text": " ".join(original_input.strip().split())}
+            )
+
+        return [
+            claim.model_copy(update={"claim_id": f"{case_id}_claim_{index}"})
+            for index, claim in enumerate(repaired, start=1)
         ]
 
-    def _is_compact_sports_result(self, text: str) -> bool:
+    def _is_dependent_fragment(self, claim: AtomicClaim) -> bool:
+        text = claim.claim_text.strip()
         lowered = text.lower()
-        has_result_verb = any(
-            word in lowered
-            for word in ["beat", "beats", "defeated", "defeats", "won", "lost"]
+
+        starts_with_dependent_marker = re.match(
+            r"^(with|without|in|on|at|by|from|for|during|after|before|according to|"
+            r"under|over|worth|valued at|including|excluding)\b",
+            lowered,
         )
-        has_score = re.search(r"\b\d+\s*[-–]\s*\d+\b", text) is not None
-        has_context = (
-            "round of" in lowered
-            or "world cup" in lowered
-            or "worldcup" in lowered
-            or re.search(r"\b(?:19|20)\d{2}\b", text) is not None
+        if starts_with_dependent_marker:
+            return True
+
+        has_anchor_fields = bool(claim.subject and claim.predicate)
+        if has_anchor_fields:
+            return False
+
+        if self._has_statement_verb(lowered):
+            return False
+
+        mostly_context = bool(
+            re.search(r"\b(?:19|20)\d{2}\b", text)
+            or re.search(r"\b\d+(?:\.\d+)?\s*(?:%|million|billion|trillion|usd|dollars?)\b", lowered)
+            or re.search(r"\b\d+\s*[-–]\s*\d+\b", text)
+            or re.search(r"\b(?:round|quarter|q[1-4]|fiscal year|fy)\b", lowered)
         )
-        has_matchup = self._matchup_subject(text) is not None
 
-        return has_result_verb and has_score and has_context and has_matchup
+        return mostly_context and len(text.split()) <= 8
 
-    def _matchup_subject(self, text: str) -> str | None:
-        matchup = re.search(
-            r"\b([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\s+"
-            r"(?:beat|beats|defeated|defeats|vs\.?|versus)\s+"
-            r"([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\b",
-            text,
+    def _has_statement_verb(self, lowered_text: str) -> bool:
+        return bool(
+            re.search(
+                r"\b("
+                r"is|are|was|were|be|been|being|has|have|had|"
+                r"won|lost|beat|beats|defeated|defeats|joined|signed|"
+                r"said|announced|reported|filed|raised|fell|rose|"
+                r"acquired|sold|bought|launched|released"
+                r")\b",
+                lowered_text,
+            )
         )
-        if not matchup:
-            return None
 
-        return f"{matchup.group(1)} vs {matchup.group(2)}"
+    def _is_single_statement(self, text: str) -> bool:
+        cleaned = text.strip()
+        if not cleaned:
+            return False
 
-    def _matchup_object(self, text: str) -> str | None:
-        parts = []
+        sentence_breaks = re.findall(r"[.!?]\s+", cleaned)
+        return len(sentence_breaks) == 0
 
-        score = re.search(r"\b\d+\s*[-–]\s*\d+\b", text)
-        if score:
-            parts.append(f"score {score.group(0)}")
+    def _merge_claim_with_fragments(
+        self,
+        claim: AtomicClaim,
+        fragments: list[AtomicClaim],
+    ) -> AtomicClaim:
+        text_parts = [claim.claim_text, *[fragment.claim_text for fragment in fragments]]
+        merged_text = " ".join(" ".join(text_parts).split())
+        confidence_values = [claim.confidence, *[fragment.confidence for fragment in fragments]]
 
-        round_match = re.search(r"\bround of \d+\b", text, flags=re.IGNORECASE)
-        if round_match:
-            parts.append(round_match.group(0))
-
-        year = re.search(r"\b(?:19|20)\d{2}\b", text)
-        if year:
-            parts.append(year.group(0))
-
-        if re.search(r"\bworld\s*cup\b|\bworldcup\b", text, flags=re.IGNORECASE):
-            parts.append("FIFA World Cup")
-
-        return ", ".join(parts) or None
+        return claim.model_copy(
+            update={
+                "claim_text": merged_text,
+                "confidence": max(confidence_values),
+            }
+        )
 
     def _parse_claim_type(self, value: object, claim_text: str) -> ClaimType:
         if value is not None:

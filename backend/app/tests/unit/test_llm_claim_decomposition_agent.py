@@ -167,7 +167,7 @@ def test_llm_claim_decomposition_agent_normalizes_loose_gemini_output():
     assert output.claims[0].confidence == 0.9
 
 
-def test_llm_claim_decomposition_agent_repairs_fragmented_world_cup_result():
+def test_llm_claim_decomposition_agent_reattaches_dependent_fragments():
     agent = LLMClaimDecompositionAgent(llm_provider=FragmentedWorldCupResultProvider())
 
     output = agent.run(
@@ -185,5 +185,6 @@ def test_llm_claim_decomposition_agent_repairs_fragmented_world_cup_result():
     assert output.claims[0].claim_text == (
         "Belgium beats USA with a 3-1 win in the Round of 16 in WorldCup 2026 v"
     )
-    assert output.claims[0].subject == "Belgium vs USA"
-    assert output.claims[0].object == "score 3-1, Round of 16, 2026, FIFA World Cup"
+    assert output.claims[0].subject == "Belgium"
+    assert output.claims[0].predicate == "beats"
+    assert output.claims[0].object == "USA"
