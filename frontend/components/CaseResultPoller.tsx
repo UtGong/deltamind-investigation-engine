@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, AlertTriangle, CheckCircle2, Clock, Fingerprint, Gauge, Plus, Route, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, ChevronDown, Clock, Fingerprint, Gauge, Plus, Route, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EvidenceGraphVisualizer } from "@/components/EvidenceGraphVisualizer";
 
@@ -34,6 +34,11 @@ function getString(source: RecordValue | null | undefined, key: string): string 
 function getNumber(source: RecordValue | null | undefined, key: string): number | null {
   const value = source?.[key];
   return typeof value === "number" ? value : null;
+}
+
+function getRecord(source: RecordValue | null | undefined, key: string): RecordValue | null {
+  const value = source?.[key];
+  return isRecord(value) ? value : null;
 }
 
 function getDate(source: RecordValue | null | undefined, key: string): Date | null {
@@ -126,6 +131,7 @@ export function CaseResultPoller({ caseId }: { caseId: string }) {
 
   const evidenceItems = useMemo(() => asArray(investigation?.evidence), [investigation]);
   const stanceResults = useMemo(() => asArray(investigation?.stances), [investigation]);
+  const verdictResults = useMemo(() => asArray(investigation?.verdicts), [investigation]);
   const corrections = useMemo(() => asArray(investigation?.corrections), [investigation]);
   const agentRuns = useMemo(() => asArray(investigation?.agent_runs), [investigation]);
   const plannerRuns = useMemo(
@@ -203,24 +209,7 @@ export function CaseResultPoller({ caseId }: { caseId: string }) {
         </section>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-        <Panel title="Evidence Graph">
-          <EvidenceGraphVisualizer graph={graph} />
-        </Panel>
-
-        <Panel title="Verdict Summary">
-          <KeyValue label="Verdict" value={verdict} icon={<ShieldCheck className="h-4 w-4 text-emerald-300" />} />
-          <KeyValue label="Confidence" value={confidence === null ? "N/A" : confidence.toFixed(3)} icon={<Gauge className="h-4 w-4 text-cyan-300" />} />
-          <KeyValue label="Trust Index" value={trustIndex === null ? "N/A" : trustIndex.toFixed(3)} icon={<Fingerprint className="h-4 w-4 text-amber-300" />} />
-          <KeyValue label="Nodes" value={String(asArray(graph?.nodes).length)} />
-          <KeyValue label="Links" value={String(asArray(graph?.edges).length)} />
-          <KeyValue label="Runtime" value={runtime} icon={<Clock className="h-4 w-4 text-violet-300" />} />
-        </Panel>
-      </div>
-
-      <PlannerPanel runs={plannerRuns} />
-
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <Panel title="Claim Correction">
           {activeCorrections.length === 0 ? (
             <EmptyText>No evidence-backed correction returned.</EmptyText>
@@ -229,6 +218,29 @@ export function CaseResultPoller({ caseId }: { caseId: string }) {
           )}
         </Panel>
 
+        <Panel title="Verdict Summary">
+          <VerdictSummary
+            verdict={verdict}
+            confidence={confidence}
+            trustIndex={trustIndex}
+            runtime={runtime}
+            status={status}
+            graph={graph}
+            evidenceCount={evidenceItems.length}
+            stanceCount={stanceResults.length}
+            verdicts={verdictResults}
+            certificate={certificate}
+          />
+        </Panel>
+      </div>
+
+      <Panel title="Evidence Graph">
+        <EvidenceGraphVisualizer graph={graph} />
+      </Panel>
+
+      <PlannerPanel runs={plannerRuns} />
+
+      <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Trust Certificate">
         <KeyValue label="Certificate" value={getString(certificate, "certificate_id") ?? "Not ready"} />
         <KeyValue label="Lifecycle" value={getString(certificate, "lifecycle_status") ?? "N/A"} />
@@ -245,6 +257,141 @@ export function CaseResultPoller({ caseId }: { caseId: string }) {
           {stanceResults.length === 0 ? <EmptyText>No stance results returned.</EmptyText> : stanceResults.slice(0, 8).map((item, index) => <Stance key={index} value={item} />)}
         </Panel>
       </div>
+    </div>
+  );
+}
+
+function VerdictSummary({
+  verdict,
+  confidence,
+  trustIndex,
+  runtime,
+  status,
+  graph,
+  evidenceCount,
+  stanceCount,
+  verdicts,
+  certificate,
+}: {
+  verdict: string;
+  confidence: number | null;
+  trustIndex: number | null;
+  runtime: string;
+  status: string;
+  graph: RecordValue | null;
+  evidenceCount: number;
+  stanceCount: number;
+  verdicts: unknown[];
+  certificate: RecordValue | null;
+}) {
+  const verdictRecords = verdicts.filter(isRecord);
+  const avgClaimConfidence =
+    verdictRecords.length === 0
+      ? null
+      : verdictRecords.reduce((sum, item) => sum + (getNumber(item, "confidence") ?? 0), 0) / verdictRecords.length;
+  const lifecycleEvents = asArray(certificate?.lifecycle_events).filter(isRecord);
+  const activeLifecycleReason = lifecycleEvents
+    .map((event) => getString(event, "reason"))
+    .find((reason): reason is string => Boolean(reason));
+
+  return (
+    <>
+      <KeyValue label="Verdict" value={verdict} icon={<ShieldCheck className="h-4 w-4 text-emerald-300" />} />
+      <KeyValue label="Confidence" value={formatMetricNumber(confidence)} icon={<Gauge className="h-4 w-4 text-cyan-300" />} />
+      <KeyValue label="Trust Index" value={formatMetricNumber(trustIndex)} icon={<Fingerprint className="h-4 w-4 text-amber-300" />} />
+      <KeyValue label="Runtime" value={runtime} icon={<Clock className="h-4 w-4 text-violet-300" />} />
+
+      <Expandable title="Why This Verdict" defaultOpen>
+        <p className="text-sm leading-6 text-slate-300">
+          The case verdict is aggregated from {verdictRecords.length} claim verdict{verdictRecords.length === 1 ? "" : "s"}. A contradicted atom takes priority, followed by contested, unverifiable, and partially supported outcomes; a case is supported only when all atoms are supported.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <MiniStat label="Claim verdicts" value={String(verdictRecords.length)} />
+          <MiniStat label="Evidence items" value={String(evidenceCount)} />
+          <MiniStat label="Stance results" value={String(stanceCount)} />
+        </div>
+      </Expandable>
+
+      <Expandable title="Confidence Details">
+        <p className="text-sm leading-6 text-slate-300">
+          Case confidence is the average of the claim-level confidence scores. Each claim score is driven by weighted support, contradiction, and uncertainty signals from the stance classifier and evidence quality.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <MiniStat label="Case confidence" value={formatMetricNumber(confidence)} />
+          <MiniStat label="Avg claim confidence" value={formatMetricNumber(avgClaimConfidence)} />
+        </div>
+        <div className="mt-3 space-y-2">
+          {verdictRecords.length === 0 ? (
+            <EmptyText>No claim-level verdicts returned.</EmptyText>
+          ) : (
+            verdictRecords.slice(0, 6).map((item, index) => <ClaimVerdictRow key={getString(item, "claim_id") ?? index} value={item} />)
+          )}
+        </div>
+      </Expandable>
+
+      <Expandable title="Trust Index Details">
+        <p className="text-sm leading-6 text-slate-300">
+          Trust index combines case confidence with evidence reliability, independence, and specificity. Unverifiable findings reduce the trust score.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <MiniStat label="Trust index" value={formatMetricNumber(trustIndex)} />
+          <MiniStat label="State" value={status} />
+          <MiniStat label="Certificate" value={getString(certificate, "certificate_id") ? "issued" : "pending"} />
+        </div>
+        {activeLifecycleReason && <p className="mt-3 text-sm leading-6 text-slate-400">{activeLifecycleReason}</p>}
+      </Expandable>
+
+      <Expandable title="Graph Coverage">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <MiniStat label="Nodes" value={String(asArray(graph?.nodes).length)} />
+          <MiniStat label="Links" value={String(asArray(graph?.edges).length)} />
+        </div>
+      </Expandable>
+    </>
+  );
+}
+
+function Expandable({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  return (
+    <details open={defaultOpen} className="group border border-slate-800 bg-slate-950/50">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-slate-100">
+        <span>{title}</span>
+        <ChevronDown className="h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="border-t border-slate-800 px-4 py-3">{children}</div>
+    </details>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-slate-800 bg-slate-900/70 px-3 py-2">
+      <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function ClaimVerdictRow({ value }: { value: RecordValue }) {
+  const debug = getRecord(value, "debug");
+  return (
+    <div className="border border-slate-800 bg-slate-900/70 px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-white">{getString(value, "verdict") ?? "unknown"}</p>
+        <span className="text-xs text-cyan-200">confidence {formatMetricNumber(getNumber(value, "confidence"))}</span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-400">{getString(value, "reason") ?? "No verdict rationale returned."}</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <MiniStat label="Support" value={formatMetricNumber(getNumber(value, "support_score"))} />
+        <MiniStat label="Contradiction" value={formatMetricNumber(getNumber(value, "contradiction_score"))} />
+        <MiniStat label="Uncertainty" value={formatMetricNumber(getNumber(value, "uncertainty_score"))} />
+      </div>
+      {debug && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <MiniStat label="Evidence" value={formatMetricNumber(getNumber(debug, "total_evidence"))} />
+          <MiniStat label="Decisive stances" value={formatMetricNumber(getNumber(debug, "decisive_stance_count"))} />
+        </div>
+      )}
     </div>
   );
 }
@@ -323,6 +470,12 @@ function PlannerPanel({ runs }: { runs: unknown[] }) {
 function formatConfidence(value: number | null) {
   if (value === null) return "n/a";
   return value.toFixed(2);
+}
+
+function formatMetricNumber(value: number | null) {
+  if (value === null) return "N/A";
+  if (Number.isInteger(value) && Math.abs(value) >= 1) return String(value);
+  return value.toFixed(3);
 }
 
 function PlannerChips({ values, tone }: { values: string[]; tone: "cyan" | "emerald" | "slate" }) {
