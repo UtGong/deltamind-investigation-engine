@@ -222,4 +222,4 @@ def test_score_claim_uses_lower_contradiction_threshold():
 
     thresholds = service._pivot_thresholds_for_claim(claim)
 
-    assert thresholds.contradicted_min == 0.50
+    assert thresholds.contradicted_min == 0.40

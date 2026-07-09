@@ -1,4 +1,4 @@
-from app.algorithm.pivot.scoring import score_claim
+from app.algorithm.pivot.scoring import PivotThresholds, score_claim
 from app.core.constants import StanceLabel, VerdictLabel
 from app.schemas.agent import EvidenceItem, StanceResult
 
@@ -61,6 +61,40 @@ def test_contradicted_claim():
 
     assert verdict.verdict == VerdictLabel.CONTRADICTED
     assert verdict.contradiction_score > verdict.support_score
+
+
+def test_score_contradiction_threshold_accepts_lower_quality_direct_evidence():
+    evidence = [
+        EvidenceItem(
+            evidence_id="E_score",
+            claim_id="C1",
+            source_id="S_reuters",
+            evidence_text="USA loses 4-1 in World Cup round of 16 against Belgium.",
+            reliability=0.35,
+            independence=0.7,
+            freshness=0.6,
+            specificity=0.8,
+        )
+    ]
+    stances = [
+        StanceResult(
+            claim_id="C1",
+            evidence_id="E_score",
+            stance=StanceLabel.CONTRADICTS,
+            confidence=0.9,
+            reason="The evidence reports the same matchup with a different score.",
+        )
+    ]
+
+    verdict = score_claim(
+        "C1",
+        evidence,
+        stances,
+        thresholds=PivotThresholds(contradicted_min=0.40),
+    )
+
+    assert verdict.verdict == VerdictLabel.CONTRADICTED
+    assert verdict.contradiction_score >= 0.40
 
 
 def test_strong_support_not_overruled_by_insufficient_noise():

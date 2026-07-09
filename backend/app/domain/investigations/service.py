@@ -1378,7 +1378,7 @@ class InvestigationService:
             return PivotThresholds()
 
         return PivotThresholds(
-            contradicted_min=0.50,
+            contradicted_min=0.40,
         )
 
     def _run_paid_search_recovery(
