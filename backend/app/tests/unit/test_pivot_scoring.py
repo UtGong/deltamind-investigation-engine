@@ -86,15 +86,39 @@ def test_score_contradiction_threshold_accepts_lower_quality_direct_evidence():
         )
     ]
 
-    verdict = score_claim(
-        "C1",
-        evidence,
-        stances,
-        thresholds=PivotThresholds(contradicted_min=0.40),
-    )
+    verdict = score_claim("C1", evidence, stances)
 
     assert verdict.verdict == VerdictLabel.CONTRADICTED
-    assert verdict.contradiction_score >= 0.40
+    assert verdict.contradiction_score >= PivotThresholds().contradicted_min
+
+
+def test_structured_numeric_support_threshold_accepts_lower_quality_direct_evidence():
+    evidence = [
+        EvidenceItem(
+            evidence_id="E_score",
+            claim_id="C1",
+            source_id="S_reuters",
+            evidence_text="Team A defeated Team B 4-1.",
+            reliability=0.35,
+            independence=0.7,
+            freshness=0.6,
+            specificity=0.8,
+        )
+    ]
+    stances = [
+        StanceResult(
+            claim_id="C1",
+            evidence_id="E_score",
+            stance=StanceLabel.SUPPORTS,
+            confidence=0.9,
+            reason="The evidence states the same match winner and score as the claim.",
+        )
+    ]
+
+    verdict = score_claim("C1", evidence, stances)
+
+    assert verdict.verdict == VerdictLabel.SUPPORTED
+    assert verdict.support_score >= PivotThresholds().supported_min
 
 
 def test_strong_support_not_overruled_by_insufficient_noise():

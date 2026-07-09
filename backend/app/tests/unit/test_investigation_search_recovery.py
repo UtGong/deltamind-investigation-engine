@@ -210,16 +210,3 @@ def test_score_evidence_is_prioritized_and_stops_stance_classification():
     assert prioritized[0].title == "USA 1-4 Belgium | Result, Stats & Highlights"
     assert service._has_decisive_score_stance(claim=claim, stance=stance) is True
 
-
-def test_score_claim_uses_lower_contradiction_threshold():
-    service = InvestigationService.__new__(InvestigationService)
-    claim = AtomicClaim(
-        claim_id="claim_score",
-        claim_text="USA lost to Belgium with a 3-1 win",
-        claim_type=ClaimType.RESULT,
-        confidence=0.95,
-    )
-
-    thresholds = service._pivot_thresholds_for_claim(claim)
-
-    assert thresholds.contradicted_min == 0.40

@@ -55,6 +55,11 @@ def score_claim(
             continue
 
         weighted_score = stance.confidence * _evidence_weight(evidence)
+        weighted_score = _apply_structured_fact_floor(
+            weighted_score=weighted_score,
+            stance=stance,
+            thresholds=thresholds,
+        )
 
         if stance.stance == StanceLabel.SUPPORTS:
             support_score = _combine_signal_scores(support_score, weighted_score)
@@ -130,6 +135,39 @@ def _combine_signal_scores(current_score: float, new_score: float) -> float:
     new = max(0.0, min(1.0, new_score))
 
     return 1.0 - ((1.0 - current) * (1.0 - new))
+
+
+def _apply_structured_fact_floor(
+    *,
+    weighted_score: float,
+    stance: StanceResult,
+    thresholds: PivotThresholds,
+) -> float:
+    if stance.confidence < 0.88:
+        return weighted_score
+
+    reason = stance.reason.lower()
+
+    if stance.stance == StanceLabel.CONTRADICTS and _is_structured_numeric_reason(reason):
+        return max(weighted_score, thresholds.contradicted_min)
+
+    if stance.stance == StanceLabel.SUPPORTS and _is_structured_numeric_reason(reason):
+        return max(weighted_score, thresholds.supported_min)
+
+    return weighted_score
+
+
+def _is_structured_numeric_reason(reason: str) -> bool:
+    return (
+        ("score" in reason or "numeric" in reason or "number" in reason)
+        and (
+            "same matchup" in reason
+            or "same match" in reason
+            or "same event" in reason
+            or "same entity" in reason
+            or "same subject" in reason
+        )
+    )
 
 
 def _calculate_uncertainty(
