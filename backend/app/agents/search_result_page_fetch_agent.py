@@ -28,10 +28,12 @@ class SearchResultPageFetchAgent(
         url_fetch_agent: UrlFetchAgent | None = None,
         max_page_chars: int = 6000,
         min_existing_snippet_chars_to_skip: int = 1800,
+        max_total_fetches: int = 3,
     ) -> None:
         self.url_fetch_agent = url_fetch_agent or UrlFetchAgent()
         self.max_page_chars = max_page_chars
         self.min_existing_snippet_chars_to_skip = min_existing_snippet_chars_to_skip
+        self.max_total_fetches = max_total_fetches
 
     def run(
         self,
@@ -39,6 +41,7 @@ class SearchResultPageFetchAgent(
     ) -> SearchResultPageFetchOutput:
         enriched_results: list[SearchResult] = []
         fetched_count = 0
+        attempted_fetch_count = 0
         skipped_count = 0
         failed_urls: list[str] = []
 
@@ -54,6 +57,12 @@ class SearchResultPageFetchAgent(
                 skipped_count += 1
                 continue
 
+            if attempted_fetch_count >= self.max_total_fetches:
+                enriched_results.append(result)
+                skipped_count += 1
+                continue
+
+            attempted_fetch_count += 1
             fetched = self.url_fetch_agent.run(
                 UrlFetchInput(url=result.url)
             )

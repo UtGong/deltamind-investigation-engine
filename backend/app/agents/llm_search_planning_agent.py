@@ -18,6 +18,7 @@ from app.schemas.search import SearchPlan, SearchQuery, SourceCandidate
 
 class LLMSearchPlanningInput(BaseModel):
     claim: AtomicClaim
+    case_context: str | None = None
 
 
 class LLMSearchPlanningOutput(BaseModel):
@@ -44,6 +45,13 @@ class LLMSearchPlanningAgent(
     def run(self, input_data: LLMSearchPlanningInput) -> LLMSearchPlanningOutput:
         settings = get_settings()
         claim = input_data.claim
+        case_context = self._optional_str(input_data.case_context)
+        planning_text = self._planning_text(claim.claim_text, case_context)
+        context_block = (
+            f"Full case/report context: {case_context}\n"
+            if case_context and case_context.strip() != claim.claim_text.strip()
+            else ""
+        )
 
         request = LLMRequest(
             messages=[
@@ -118,6 +126,7 @@ class LLMSearchPlanningAgent(
                         "}\n\n"
                         f"Claim ID: {claim.claim_id}\n"
                         f"Claim text: {claim.claim_text}\n"
+                        f"{context_block}"
                         f"Claim type: {claim.claim_type}\n"
                         f"Subject: {claim.subject}\n"
                         f"Predicate: {claim.predicate}\n"
@@ -134,6 +143,7 @@ class LLMSearchPlanningAgent(
         search_plan = self._parse_search_plan(
             claim_id=claim.claim_id,
             claim_text=claim.claim_text,
+            planning_text=planning_text,
             claim=claim,
             content=response.content,
         )
@@ -147,13 +157,15 @@ class LLMSearchPlanningAgent(
         self,
         claim_id: str,
         claim_text: str,
+        planning_text: str | None,
         claim: AtomicClaim | None,
         content: str,
     ) -> SearchPlan:
         payload = self._safe_json_loads(content)
+        evidence_text = planning_text or claim_text
 
         if payload is None or not isinstance(payload, dict):
-            return self._fallback_plan(claim_id, claim_text, claim=claim)
+            return self._fallback_plan(claim_id, evidence_text, claim=claim)
 
         source_candidates = self._parse_source_candidates(
             payload.get("source_candidates", [])
@@ -164,7 +176,7 @@ class LLMSearchPlanningAgent(
         )
 
         if not source_candidates and not queries:
-            return self._fallback_plan(claim_id, claim_text, claim=claim)
+            return self._fallback_plan(claim_id, evidence_text, claim=claim)
 
         should_use_paid_search = bool(payload.get("should_use_paid_search", False))
         max_paid_search_calls = self._parse_nonnegative_int(
@@ -181,7 +193,7 @@ class LLMSearchPlanningAgent(
             max_paid_search_calls=max_paid_search_calls,
         )
 
-        return self._sanitize_and_enrich_plan(search_plan, claim_text, claim=claim)
+        return self._sanitize_and_enrich_plan(search_plan, evidence_text, claim=claim)
 
     def _parse_source_candidates(self, raw_candidates: object) -> list[SourceCandidate]:
         if not isinstance(raw_candidates, list):
@@ -296,6 +308,18 @@ class LLMSearchPlanningAgent(
                 return None
 
         return None
+
+    def _planning_text(self, claim_text: str, case_context: str | None) -> str:
+        context = (case_context or "").strip()
+        claim_text = claim_text.strip()
+
+        if not context or context == claim_text:
+            return claim_text
+
+        if claim_text.lower() in context.lower():
+            return context
+
+        return f"{claim_text} {context}".strip()
 
     def _fallback_plan(
         self,
@@ -451,11 +475,6 @@ class LLMSearchPlanningAgent(
         )
 
     def _central_subject(self, claim_text: str, *, claim: AtomicClaim | None) -> str:
-        if claim and claim.subject and claim.object:
-            return f"{claim.subject} {claim.object}".strip()
-        if claim and claim.subject:
-            return claim.subject
-
         matchup = re.search(
             r"\b([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\s+(?:beat|beats|defeated|defeats|vs\.?|versus)\s+([A-Z][A-Za-z']+|USA|US|U\.S\.|United States)\b",
             claim_text,
@@ -463,11 +482,29 @@ class LLMSearchPlanningAgent(
         if matchup:
             return f"{matchup.group(1)} vs {matchup.group(2)}"
 
+        if claim and claim.subject and claim.object:
+            if self._is_validation_value(str(claim.object)):
+                return claim.subject
+            return f"{claim.subject} {claim.object}".strip()
+        if claim and claim.subject:
+            return claim.subject
+
         words = re.findall(r"\b[A-Z][A-Za-z0-9']+\b|USA|U\.S\.", claim_text)
         if words:
             return " ".join(words[:4])
 
         return claim_text
+
+    def _is_validation_value(self, value: str) -> bool:
+        lowered = value.lower()
+        return bool(
+            re.search(r"\b\d+\s*[-–]\s*\d+\b", lowered)
+            or re.search(r"\b(?:19|20)\d{2}\b", lowered)
+            or "round of" in lowered
+            or "score" in lowered
+            or "world cup" in lowered
+            or "worldcup" in lowered
+        )
 
     def _validation_terms(self, claim_text: str) -> list[str]:
         terms: list[str] = []

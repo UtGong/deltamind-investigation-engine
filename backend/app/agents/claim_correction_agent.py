@@ -45,15 +45,15 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
                 )
             )
 
+        deterministic_correction = self._score_correction(input_data)
+        if deterministic_correction is not None:
+            return ClaimCorrectionOutput(correction=deterministic_correction)
+
         request = self._build_request(input_data)
         response = self.llm_provider.generate(request)
         payload = self._safe_json_loads(response.content)
 
         if payload is None:
-            deterministic_correction = self._score_correction(input_data)
-            if deterministic_correction is not None:
-                return ClaimCorrectionOutput(correction=deterministic_correction)
-
             return ClaimCorrectionOutput(
                 correction=ClaimCorrection(
                     claim_id=input_data.claim.claim_id,

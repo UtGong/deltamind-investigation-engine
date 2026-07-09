@@ -4,7 +4,11 @@ from app.schemas.search import SearchQuery
 
 
 class FakeTavilyClient:
+    def __init__(self) -> None:
+        self.queries = []
+
     def search(self, query: str, **kwargs) -> dict:
+        self.queries.append(query)
         return {
             "query": query,
             "results": [
@@ -19,7 +23,8 @@ class FakeTavilyClient:
 
 
 def test_tavily_search_provider_maps_results_without_source_judgment():
-    provider = TavilySearchProvider(client=FakeTavilyClient())
+    client = FakeTavilyClient()
+    provider = TavilySearchProvider(client=client)
 
     query = SearchQuery(
         query_id="query_1",
@@ -37,3 +42,22 @@ def test_tavily_search_provider_maps_results_without_source_judgment():
     # Provider retrieves. It should not decide authority.
     assert results[0].source_type == SourceType.UNKNOWN
     assert results[0].reliability == 0.5
+
+
+def test_tavily_search_provider_includes_target_domains_in_query_text():
+    client = FakeTavilyClient()
+    provider = TavilySearchProvider(client=client)
+
+    query = SearchQuery(
+        query_id="query_1",
+        claim_id="claim_1",
+        query="Belgium USA 2026 FIFA World Cup score 3-1",
+        purpose="Find match result.",
+        target_domains=["fifa.com", "espn.com"],
+    )
+
+    provider.search(query)
+
+    assert "site:fifa.com" in client.queries[0]
+    assert "site:espn.com" in client.queries[0]
+    assert "Belgium USA 2026 FIFA World Cup score 3-1" in client.queries[0]

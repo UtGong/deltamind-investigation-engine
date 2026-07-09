@@ -121,8 +121,37 @@ def extract_score_fact(text: str) -> ScoreFact | None:
 
 
 def _extract_winner_loser(text: str) -> tuple[str | None, str | None]:
+    score_between_teams = re.search(
+        rf"\b({TEAM_PATTERN})\s+(\d+)\s*[-–]\s*(\d+)\s+({TEAM_PATTERN})(?:\s|,|\.|\||$)",
+        text,
+    )
+    if score_between_teams is not None:
+        first = _clean_team(score_between_teams.group(1))
+        second = _clean_team(score_between_teams.group(4))
+        first_goals = int(score_between_teams.group(2))
+        second_goals = int(score_between_teams.group(3))
+        if first_goals > second_goals:
+            return first, second
+        if second_goals > first_goals:
+            return second, first
+
+    teams_then_score = re.search(
+        rf"\b({TEAM_PATTERN})\s+(?i:v|vs\.?|versus)\s+({TEAM_PATTERN})\s+(\d+)\s*[-–]\s*(\d+)\b",
+        text,
+    )
+    if teams_then_score is not None:
+        first = _clean_team(teams_then_score.group(1))
+        second = _clean_team(teams_then_score.group(2))
+        first_goals = int(teams_then_score.group(3))
+        second_goals = int(teams_then_score.group(4))
+        if first_goals > second_goals:
+            return first, second
+        if second_goals > first_goals:
+            return second, first
+
     patterns = [
         rf"\b({TEAM_PATTERN})\s+(?i:beat|beats|defeated|defeats)\s+(?:the\s+)?({TEAM_PATTERN})(?:\s|,|\.|$)",
+        rf"\b({TEAM_PATTERN})\s+(?i:lost)\s+(?i:to)\s+(?:the\s+)?({TEAM_PATTERN}).*?\d+\s*[-–]\s*\d+\s+(?i:win|victory)(?:\s|,|\.|$)",
         rf"\b({TEAM_PATTERN})(?:'s)?\s+\d+\s*[-–]\s*\d+\s+(?i:victory over)\s+(?:the\s+)?({TEAM_PATTERN})(?:\s|,|\.|$)",
         rf"\b({TEAM_PATTERN})\s+(?i:lost)\s+\d+\s*[-–]\s*\d+\s+(?i:to)\s+(?:the\s+)?({TEAM_PATTERN})(?:\s|,|\.|$)",
         rf"\b({TEAM_PATTERN}).*?\d+\s*[-–]\s*\d+\s+(?i:loss to)\s+(?:the\s+)?({TEAM_PATTERN})(?:\s|,|\.|$)",
@@ -136,7 +165,7 @@ def _extract_winner_loser(text: str) -> tuple[str | None, str | None]:
         first = _clean_team(match.group(1))
         second = _clean_team(match.group(2))
 
-        if index in {2, 3}:
+        if index in {1, 3, 4}:
             return second, first
 
         return first, second

@@ -21,7 +21,11 @@ class FakeUrlFetchAgent:
 
 
 class FailingUrlFetchAgent:
+    def __init__(self):
+        self.calls = []
+
     def run(self, input_data):
+        self.calls.append(str(input_data.url))
         return UrlFetchOutput(
             url=str(input_data.url),
             final_url=None,
@@ -54,6 +58,15 @@ def make_search_result(snippet: str = "Short snippet.") -> SearchResult:
         independence=0.5,
         freshness=0.5,
         specificity=0.6,
+    )
+
+
+def make_numbered_search_result(index: int) -> SearchResult:
+    return make_search_result().model_copy(
+        update={
+            "result_id": f"result_{index}",
+            "url": f"https://example.com/source-{index}",
+        }
     )
 
 
@@ -114,3 +127,24 @@ def test_search_result_page_fetch_agent_skips_long_existing_snippet():
     assert output.fetched_count == 0
     assert output.skipped_count == 1
     assert output.results[0].snippet == long_snippet
+
+
+def test_search_result_page_fetch_agent_limits_failed_fetch_attempts():
+    fetcher = FailingUrlFetchAgent()
+    agent = SearchResultPageFetchAgent(
+        url_fetch_agent=fetcher,
+        max_total_fetches=2,
+    )
+
+    output = agent.run(
+        SearchResultPageFetchInput(
+            claim=make_claim(),
+            search_results=[make_numbered_search_result(index) for index in range(4)],
+        )
+    )
+
+    assert len(fetcher.calls) == 2
+    assert output.fetched_count == 0
+    assert len(output.failed_urls) == 2
+    assert output.skipped_count == 2
+    assert len(output.results) == 4

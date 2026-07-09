@@ -29,8 +29,18 @@ class TavilySearchProvider:
         self.search_depth = settings.tavily_search_depth
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
+        target_domains = [
+            domain.strip().lower()
+            for domain in query.target_domains
+            if domain.strip()
+        ]
+        search_text = query.query
+        if target_domains:
+            domain_terms = " OR ".join(f"site:{domain}" for domain in target_domains[:3])
+            search_text = f"({domain_terms}) {query.query}"
+
         response = self.client.search(
-            query.query,
+            search_text,
             max_results=self.max_results,
             search_depth=self.search_depth,
             include_answer=False,

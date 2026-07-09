@@ -37,7 +37,7 @@ from app.agents.provided_text_evidence_agent import (
 )
 from app.agents.report_agent import ReportAgent, ReportAgentInput
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
-from app.agents.score_facts import extract_score_fact
+from app.agents.score_facts import extract_score_fact, infer_score_stance
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
 from app.algorithm.pivot.scoring import score_claim
 from app.domain.source_reliability.service import SourceReliabilityService
@@ -65,7 +65,7 @@ from app.providers.search.factory import get_free_search_provider, get_paid_sear
 from app.schemas.agent import AtomicClaim, EvidenceItem, PivotVerdict, StanceResult
 from app.schemas.api import InvestigationResult, VerificationError, VerificationStateResponse
 from app.schemas.correction import ClaimCorrection
-from app.schemas.search import SearchQuery, SearchResult
+from app.schemas.search import SearchPlan, SearchQuery, SearchResult
 
 
 class InvestigationService:
@@ -285,23 +285,37 @@ class InvestigationService:
 
                 continue
 
-            search_plan_input = self.search_planning_input_model(claim=claim)
+            search_plan_input = self.search_planning_input_model(
+                claim=claim,
+                case_context=investigation_input_text,
+            )
+            search_planning_agent_name = self.search_planning_agent.name
             try:
                 search_plan_output = self.search_planning_agent.run(search_plan_input)
             except Exception as error:
-                self._fail_case_due_to_upstream_llm_error(
-                    case=running_case,
-                    stage="search_planning",
-                    agent_name=self.search_planning_agent.name,
-                    error=error,
-                    input_data=search_plan_input,
-                    claim_id=claim.claim_id,
+                fallback_search_planning_agent = CostAwareSearchPlanningAgent()
+                fallback_search_plan_input = CostAwareSearchPlanningInput(
+                    claim=claim,
+                    case_context=investigation_input_text,
                 )
+                search_plan_output = fallback_search_planning_agent.run(
+                    fallback_search_plan_input
+                )
+                search_plan_output.raw_response.metadata.update(
+                    {
+                        "fallback_used": True,
+                        "fallback_reason": "llm_search_planning_error",
+                        "error_type": type(error).__name__,
+                        "error_message": str(error),
+                    }
+                )
+                search_plan_input = fallback_search_plan_input
+                search_planning_agent_name = fallback_search_planning_agent.name
             search_plan = search_plan_output.search_plan
 
             self.audit.record_agent_run(
                 case_id=case.case_id,
-                agent_name=self.search_planning_agent.name,
+                agent_name=search_planning_agent_name,
                 provider=search_plan_output.raw_response.provider,
                 model=search_plan_output.raw_response.model,
                 input_data=search_plan_input,
@@ -352,58 +366,60 @@ class InvestigationService:
             )
 
             search_results: list[SearchResult] = []
+            empty_free_search_count = 0
+            attempted_free_search_count = 0
+            stopped_for_paid_recovery = False
 
             for query in budget_decision.allowed_queries:
-                provider = self._get_provider_for_query(query)
-
-                if provider.name == "no_search_provider":
-                    self.audit.record_agent_run(
-                        case_id=case.case_id,
-                        agent_name=provider.name,
-                        provider=provider.name,
-                        input_data=query,
-                        output_data={
-                            "skipped": True,
-                            "reason": "No free external search provider is configured.",
-                        },
-                        metadata={
-                            "stage": "skipped_search",
-                            "claim_id": claim.claim_id,
-                            "query_id": query.query_id,
-                            "cost_tier": query.cost_tier,
-                        },
-                    )
-                    continue
-
-                query_results = provider.search(query)
+                query_results = self._run_search_query(
+                    case=case,
+                    claim=claim,
+                    query=query,
+                )
                 search_results.extend(query_results)
 
-                self.audit.record_agent_run(
-                    case_id=case.case_id,
-                    agent_name=provider.name,
-                    provider=provider.name,
-                    input_data=query,
-                    output_data=query_results,
-                    metadata={
-                        "stage": "search",
-                        "claim_id": claim.claim_id,
-                        "query_id": query.query_id,
-                        "cost_tier": query.cost_tier,
-                        "result_count": len(query_results) if "query_results" in locals() else len(search_results),
-                    },
-                )
-                self.audit.record_cost(
-                    case_id=case.case_id,
-                    cost_type=CostType.SEARCH,
-                    provider=provider.name,
-                    units=1 if query.cost_tier == "paid" else 0,
-                    unit_name="search_call",
-                    estimated_cost_usd=0.0,
-                    metadata={
-                        "query_id": query.query_id,
-                        "query": query.query,
-                        "cost_tier": query.cost_tier,
-                    },
+                if query.cost_tier != "paid":
+                    attempted_free_search_count += 1
+                    if not query_results:
+                        empty_free_search_count += 1
+
+                if self._should_stop_free_search_for_paid_recovery(
+                    query=query,
+                    search_results=search_results,
+                    empty_free_search_count=empty_free_search_count,
+                    attempted_free_search_count=attempted_free_search_count,
+                ):
+                    stopped_for_paid_recovery = True
+                    self.audit.record_agent_run(
+                        case_id=case.case_id,
+                        agent_name="search_budget_controller",
+                        provider="internal_deterministic",
+                        input_data=query,
+                        output_data={
+                            "stopped": True,
+                            "reason": (
+                                "Configured free search returned no results; "
+                                "moving to paid recovery instead of exhausting "
+                                "all free queries."
+                            ),
+                        },
+                        metadata={
+                            "stage": "free_search_early_stop",
+                            "claim_id": claim.claim_id,
+                            "query_id": query.query_id,
+                            "empty_free_search_count": empty_free_search_count,
+                        },
+                    )
+                    break
+
+            if not search_results or stopped_for_paid_recovery:
+                search_results.extend(
+                    self._run_paid_search_recovery(
+                        case=case,
+                        claim=claim,
+                        search_plan=search_plan,
+                        allowed_queries=budget_decision.allowed_queries,
+                    )
                 )
 
             for blocked_query in budget_decision.blocked_queries:
@@ -424,45 +440,68 @@ class InvestigationService:
                     },
                 )
 
-            direct_source_fetch_input = DirectSourceFetchInput(
-                claim=claim,
-                search_plan=search_plan,
-            )
-            direct_source_fetch_output = self.direct_source_fetch_agent.run(
-                direct_source_fetch_input
-            )
-            search_results.extend(direct_source_fetch_output.results)
+            if self._should_run_direct_source_fetch(search_results, search_plan):
+                direct_source_fetch_input = DirectSourceFetchInput(
+                    claim=claim,
+                    search_plan=search_plan,
+                )
+                direct_source_fetch_output = self.direct_source_fetch_agent.run(
+                    direct_source_fetch_input
+                )
+                search_results.extend(direct_source_fetch_output.results)
 
-            self.audit.record_agent_run(
-                case_id=case.case_id,
-                agent_name=self.direct_source_fetch_agent.name,
-                provider="direct_http_fetch",
-                input_data=direct_source_fetch_input,
-                output_data=direct_source_fetch_output,
-                metadata={
-                    "stage": "direct_source_fetch",
-                    "claim_id": claim.claim_id,
-                    "result_count": len(direct_source_fetch_output.results),
-                    "skipped_count": len(direct_source_fetch_output.skipped_candidates),
-                    "expanded_url_count": len(direct_source_fetch_output.expanded_urls),
-                    "failed_url_count": len(direct_source_fetch_output.failed_urls),
-                    "expanded_urls": direct_source_fetch_output.expanded_urls[:10],
-                    "failed_urls": direct_source_fetch_output.failed_urls[:10],
-                },
-            )
-            self.audit.record_cost(
-                case_id=case.case_id,
-                cost_type=CostType.SEARCH,
-                provider="direct_http_fetch",
-                units=0,
-                unit_name="fetch_call",
-                estimated_cost_usd=0.0,
-                metadata={
-                    "agent_name": self.direct_source_fetch_agent.name,
-                    "claim_id": claim.claim_id,
-                    "result_count": len(direct_source_fetch_output.results),
-                },
-            )
+                self.audit.record_agent_run(
+                    case_id=case.case_id,
+                    agent_name=self.direct_source_fetch_agent.name,
+                    provider="direct_http_fetch",
+                    input_data=direct_source_fetch_input,
+                    output_data=direct_source_fetch_output,
+                    metadata={
+                        "stage": "direct_source_fetch",
+                        "claim_id": claim.claim_id,
+                        "result_count": len(direct_source_fetch_output.results),
+                        "skipped_count": len(direct_source_fetch_output.skipped_candidates),
+                        "expanded_url_count": len(direct_source_fetch_output.expanded_urls),
+                        "failed_url_count": len(direct_source_fetch_output.failed_urls),
+                        "expanded_urls": direct_source_fetch_output.expanded_urls[:10],
+                        "failed_urls": direct_source_fetch_output.failed_urls[:10],
+                    },
+                )
+                self.audit.record_cost(
+                    case_id=case.case_id,
+                    cost_type=CostType.SEARCH,
+                    provider="direct_http_fetch",
+                    units=0,
+                    unit_name="fetch_call",
+                    estimated_cost_usd=0.0,
+                    metadata={
+                        "agent_name": self.direct_source_fetch_agent.name,
+                        "claim_id": claim.claim_id,
+                        "result_count": len(direct_source_fetch_output.results),
+                    },
+                )
+            else:
+                self.audit.record_agent_run(
+                    case_id=case.case_id,
+                    agent_name=self.direct_source_fetch_agent.name,
+                    provider="direct_http_fetch",
+                    input_data={
+                        "claim_id": claim.claim_id,
+                        "search_result_count": len(search_results),
+                    },
+                    output_data={
+                        "skipped": True,
+                        "reason": (
+                            "Search provider already returned results and planner "
+                            "did not provide exact source URLs."
+                        ),
+                    },
+                    metadata={
+                        "stage": "direct_source_fetch_skipped",
+                        "claim_id": claim.claim_id,
+                        "result_count": len(search_results),
+                    },
+                )
 
             page_fetch_input = SearchResultPageFetchInput(
                 claim=claim,
@@ -617,6 +656,10 @@ class InvestigationService:
                 for evidence in evidence_items
                 if evidence.claim_id != claim.claim_id
             ] + claim_evidence
+            claim_evidence = self._prioritize_evidence_for_stance(
+                claim=claim,
+                evidence_items=claim_evidence,
+            )
 
             self.audit.record_agent_run(
                 case_id=case.case_id,
@@ -685,6 +728,32 @@ class InvestigationService:
                     estimated_cost_usd=stance_output.raw_response.estimated_cost_usd,
                     metadata={"agent_name": self.stance_agent.name},
                 )
+
+                if self._has_decisive_score_stance(claim=claim, stance=stance):
+                    self.audit.record_agent_run(
+                        case_id=case.case_id,
+                        agent_name=self.stance_agent.name,
+                        provider="internal_deterministic",
+                        input_data={
+                            "claim_id": claim.claim_id,
+                            "evidence_id": evidence.evidence_id,
+                        },
+                        output_data={
+                            "stopped": True,
+                            "reason": (
+                                "A high-confidence deterministic score stance "
+                                "is sufficient for pivot scoring."
+                            ),
+                        },
+                        metadata={
+                            "stage": "stance_classification_early_stop",
+                            "claim_id": claim.claim_id,
+                            "evidence_id": evidence.evidence_id,
+                            "stance": getattr(stance.stance, "value", str(stance.stance)),
+                            "confidence": stance.confidence,
+                        },
+                    )
+                    break
 
             source_reliability_service = getattr(
                 self,
@@ -1159,6 +1228,13 @@ class InvestigationService:
             or len(cached_record.stance_snapshot or []) == 0
         )
 
+    @property
+    def paid_search_provider(self) -> SearchProvider:
+        if self._paid_search_provider is None:
+            self._paid_search_provider = get_paid_search_provider()
+
+        return self._paid_search_provider
+
     def _get_provider_for_query(self, query: SearchQuery) -> SearchProvider:
         provider_name = (query.provider or "").strip().lower()
 
@@ -1182,6 +1258,182 @@ class InvestigationService:
 
         return self.free_search_provider
 
+    def _run_search_query(
+        self,
+        *,
+        case,
+        claim: AtomicClaim,
+        query: SearchQuery,
+    ) -> list[SearchResult]:
+        provider = self._get_provider_for_query(query)
+
+        if provider.name == "no_search_provider":
+            self.audit.record_agent_run(
+                case_id=case.case_id,
+                agent_name=provider.name,
+                provider=provider.name,
+                input_data=query,
+                output_data={
+                    "skipped": True,
+                    "reason": "No free external search provider is configured.",
+                },
+                metadata={
+                    "stage": "skipped_search",
+                    "claim_id": claim.claim_id,
+                    "query_id": query.query_id,
+                    "cost_tier": query.cost_tier,
+                },
+            )
+            return []
+
+        query_results = provider.search(query)
+
+        self.audit.record_agent_run(
+            case_id=case.case_id,
+            agent_name=provider.name,
+            provider=provider.name,
+            input_data=query,
+            output_data=query_results,
+            metadata={
+                "stage": "search",
+                "claim_id": claim.claim_id,
+                "query_id": query.query_id,
+                "cost_tier": query.cost_tier,
+                "result_count": len(query_results),
+            },
+        )
+        self.audit.record_cost(
+            case_id=case.case_id,
+            cost_type=CostType.SEARCH,
+            provider=provider.name,
+            units=1 if query.cost_tier == "paid" else 0,
+            unit_name="search_call",
+            estimated_cost_usd=0.0,
+            metadata={
+                "query_id": query.query_id,
+                "query": query.query,
+                "cost_tier": query.cost_tier,
+            },
+        )
+
+        return query_results
+
+    def _should_run_direct_source_fetch(
+        self,
+        search_results: list[SearchResult],
+        search_plan: SearchPlan,
+    ) -> bool:
+        if not search_results:
+            return True
+
+        return any(candidate.url for candidate in search_plan.source_candidates)
+
+    def _should_stop_free_search_for_paid_recovery(
+        self,
+        *,
+        query: SearchQuery,
+        search_results: list[SearchResult],
+        empty_free_search_count: int,
+        attempted_free_search_count: int,
+    ) -> bool:
+        settings = get_settings()
+
+        return (
+            query.cost_tier != "paid"
+            and attempted_free_search_count >= 1
+            and settings.allow_paid_search
+            and settings.max_paid_search_calls_per_case > 0
+        )
+
+    def _prioritize_evidence_for_stance(
+        self,
+        *,
+        claim: AtomicClaim,
+        evidence_items: list[EvidenceItem],
+    ) -> list[EvidenceItem]:
+        def score_priority(evidence: EvidenceItem) -> int:
+            stance = infer_score_stance(
+                claim_text=claim.claim_text,
+                evidence_text=f"{evidence.title or ''}\n{evidence.evidence_text}",
+            )
+            return 0 if stance in {"supports", "contradicts"} else 1
+
+        return sorted(evidence_items, key=score_priority)
+
+    def _has_decisive_score_stance(
+        self,
+        *,
+        claim: AtomicClaim,
+        stance: StanceResult,
+    ) -> bool:
+        if extract_score_fact(claim.claim_text) is None:
+            return False
+
+        stance_label = getattr(stance.stance, "value", str(stance.stance))
+        return stance_label in {"supports", "contradicts"} and stance.confidence >= 0.88
+
+    def _run_paid_search_recovery(
+        self,
+        *,
+        case,
+        claim: AtomicClaim,
+        search_plan: SearchPlan,
+        allowed_queries: list[SearchQuery],
+    ) -> list[SearchResult]:
+        settings = get_settings()
+
+        if (
+            not settings.allow_paid_search
+            or settings.max_paid_search_calls_per_case <= 0
+        ):
+            return []
+
+        seed_queries = [
+            query for query in allowed_queries if query.cost_tier != "paid"
+        ] or [
+            query for query in search_plan.queries if query.cost_tier != "paid"
+        ]
+        if not seed_queries:
+            return []
+
+        max_calls = min(
+            settings.max_paid_search_calls_per_case,
+            len(seed_queries),
+        )
+        recovery_results: list[SearchResult] = []
+
+        for index, seed_query in enumerate(seed_queries[:max_calls], start=1):
+            paid_query = seed_query.model_copy(
+                update={
+                    "query_id": f"{seed_query.query_id}_paid_recovery_{index}",
+                    "cost_tier": "paid",
+                    "provider": "configured_paid_provider",
+                    "purpose": (
+                        "Paid recovery search after configured free search returned no results. "
+                        f"{seed_query.purpose}"
+                    ),
+                }
+            )
+
+            self.audit.record_agent_run(
+                case_id=case.case_id,
+                agent_name="search_budget_controller",
+                provider="internal_deterministic",
+                input_data=seed_query,
+                output_data=paid_query,
+                metadata={
+                    "stage": "paid_search_recovery",
+                    "claim_id": claim.claim_id,
+                    "query_id": seed_query.query_id,
+                    "paid_query_id": paid_query.query_id,
+                    "reason": "Free search returned no results for the claim.",
+                },
+            )
+            recovery_results.extend(
+                self._run_search_query(case=case, claim=claim, query=paid_query)
+            )
+
+        return recovery_results
 
     def _aggregate_case_verdict(
         self,

@@ -40,10 +40,17 @@ class TimeoutStanceLLMProvider(LLMProvider):
         raise TimeoutError("timed out")
 
 
+class ExplodingStanceLLMProvider(LLMProvider):
+    name = "exploding_stance_llm"
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        raise AssertionError("LLM should not be called for deterministic score stance")
+
+
 def make_claim() -> AtomicClaim:
     return AtomicClaim(
         claim_id="claim_1",
-        claim_text="Team A won the final 3-1.",
+        claim_text="Team A won the final.",
         claim_type=ClaimType.RESULT,
         confidence=0.9,
     )
@@ -56,7 +63,7 @@ def make_evidence() -> EvidenceItem:
         source_id="source_1",
         url="https://example.com",
         title="Example source",
-        evidence_text="Team A won the final 3-1.",
+        evidence_text="Team A won the final.",
         independence_group="example.com",
         reliability=0.9,
         independence=0.8,
@@ -110,6 +117,92 @@ def test_llm_stance_agent_overrides_insufficient_for_score_contradiction():
 
     assert output.stance.stance == StanceLabel.CONTRADICTS
     assert output.stance.confidence == 0.9
+
+
+def test_llm_stance_agent_skips_llm_for_score_contradiction():
+    claim = AtomicClaim(
+        claim_id="claim_score",
+        claim_text="Belgium beats USA with a 3-1 win in the Round of 16",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_score",
+        claim_id="claim_score",
+        source_id="source_fifa",
+        title="USA 1-4 Belgium | Result, Stats & Highlights",
+        evidence_text="USA 1-4 Belgium in the Round of 16 at the FIFA World Cup 2026.",
+        reliability=0.9,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.95,
+    )
+
+    output = LLMStanceAgent(llm_provider=ExplodingStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.raw_response.provider == "internal_deterministic"
+    assert output.raw_response.metadata["llm_used"] is False
+    assert output.stance.stance == StanceLabel.CONTRADICTS
+    assert output.stance.confidence == 0.9
+
+
+def test_llm_stance_agent_skips_llm_for_non_comparable_score_evidence():
+    claim = AtomicClaim(
+        claim_id="claim_score",
+        claim_text="Belgium beats USA with a 3-1 win in the Round of 16",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_generic",
+        claim_id="claim_score",
+        source_id="source_reuters",
+        title="United States vs. Belgium: Live match at FIFA World Cup 2026",
+        evidence_text="Live coverage and tournament information for United States vs. Belgium.",
+        reliability=0.8,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.5,
+    )
+
+    output = LLMStanceAgent(llm_provider=ExplodingStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.raw_response.provider == "internal_deterministic"
+    assert output.raw_response.metadata["llm_used"] is False
+    assert output.raw_response.metadata["fallback_reason"] == (
+        "score_claim_without_comparable_score_evidence"
+    )
+
+
+def test_llm_stance_agent_skips_llm_for_score_atom_without_matchup():
+    claim = AtomicClaim(
+        claim_id="claim_score_fragment",
+        claim_text="Belgium won the match with a score of 3-1",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_score",
+        claim_id="claim_score_fragment",
+        source_id="source_fifa",
+        title="USA 1-4 Belgium | Result, Stats & Highlights",
+        evidence_text="USA 1-4 Belgium in the Round of 16 at the FIFA World Cup 2026.",
+        reliability=0.9,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.95,
+    )
+
+    output = LLMStanceAgent(llm_provider=ExplodingStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.raw_response.provider == "internal_deterministic"
+    assert output.raw_response.metadata["llm_used"] is False
 
 
 def test_llm_stance_agent_falls_back_when_provider_times_out():

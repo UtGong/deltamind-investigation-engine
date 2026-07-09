@@ -201,6 +201,37 @@ def test_llm_search_planning_agent_falls_back_when_plan_is_empty():
     assert plan.queries[0].provider == "configured_free_provider"
 
 
+def test_llm_search_planning_agent_uses_case_context_for_atom_search():
+    agent = LLMSearchPlanningAgent(llm_provider=EmptyPlannerLLMProvider())
+
+    output = agent.run(
+        LLMSearchPlanningInput(
+            claim=AtomicClaim(
+                claim_id="claim_score",
+                claim_text="Belgium won the match with a score of 3-1",
+                claim_type=ClaimType.RESULT,
+                confidence=0.95,
+                subject="Belgium",
+                predicate="won the match with",
+                object="a score of 3-1",
+            ),
+            case_context=(
+                "Belgium beats USA with a 3-1 win in the Round of 16 "
+                "in WorldCup 2026"
+            ),
+        )
+    )
+
+    query_texts = [query.query for query in output.search_plan.queries]
+
+    assert any(
+        query == "Belgium vs USA 2026 FIFA World Cup score 3-1"
+        for query in query_texts
+    )
+    assert any("round of 16" in query.lower() for query in query_texts)
+    assert all("belgium a score" not in query.lower() for query in query_texts)
+
+
 def test_llm_search_planning_agent_repairs_placeholder_and_fragment_plan():
     agent = LLMSearchPlanningAgent(llm_provider=BadFragmentPlannerLLMProvider())
 

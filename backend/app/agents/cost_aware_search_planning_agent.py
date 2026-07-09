@@ -10,6 +10,7 @@ from app.schemas.search import SearchPlan, SearchQuery
 
 class CostAwareSearchPlanningInput(BaseModel):
     claim: AtomicClaim
+    case_context: str | None = None
 
 
 class CostAwareSearchPlanningOutput(BaseModel):
@@ -28,6 +29,7 @@ class CostAwareSearchPlanningAgent(
     ) -> CostAwareSearchPlanningOutput:
         settings = get_settings()
         claim = input_data.claim
+        search_text = self._search_text(claim.claim_text, input_data.case_context)
 
         queries: list[SearchQuery] = []
 
@@ -37,7 +39,7 @@ class CostAwareSearchPlanningAgent(
                     SearchQuery(
                         query_id=f"{claim.claim_id}_query_1",
                         claim_id=claim.claim_id,
-                        query=f"{claim.claim_text} primary source",
+                        query=f"{search_text} primary source",
                         purpose="Find a zero-cost primary or direct source if available.",
                         cost_tier="free",
                         expected_source_type=SourceType.UNKNOWN,
@@ -46,7 +48,7 @@ class CostAwareSearchPlanningAgent(
                     SearchQuery(
                         query_id=f"{claim.claim_id}_query_2",
                         claim_id=claim.claim_id,
-                        query=f"{claim.claim_text} independent report",
+                        query=f"{search_text} independent report",
                         purpose="Find zero-cost independent corroboration if available.",
                         cost_tier="free",
                         expected_source_type=SourceType.UNKNOWN,
@@ -65,7 +67,7 @@ class CostAwareSearchPlanningAgent(
                 SearchQuery(
                     query_id=f"{claim.claim_id}_paid_query_1",
                     claim_id=claim.claim_id,
-                    query=claim.claim_text,
+                    query=search_text,
                     purpose="Paid fallback search because external verification is allowed by budget.",
                     cost_tier="paid",
                     expected_source_type=SourceType.UNKNOWN,
@@ -100,3 +102,15 @@ class CostAwareSearchPlanningAgent(
             search_plan=search_plan,
             raw_response=raw_response,
         )
+
+    def _search_text(self, claim_text: str, case_context: str | None) -> str:
+        context = (case_context or "").strip()
+        claim_text = claim_text.strip()
+
+        if not context or context == claim_text:
+            return claim_text
+
+        if claim_text.lower() in context.lower():
+            return context
+
+        return f"{claim_text} {context}".strip()

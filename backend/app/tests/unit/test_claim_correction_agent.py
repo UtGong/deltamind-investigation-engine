@@ -27,6 +27,13 @@ class CorrectionProvider:
         )
 
 
+class ExplodingCorrectionProvider:
+    name = "exploding_correction_provider"
+
+    def generate(self, request):
+        raise AssertionError("LLM should not be called for deterministic score correction")
+
+
 def test_claim_correction_agent_uses_llm_provider_for_correction():
     claim = AtomicClaim(
         claim_id="C1",
@@ -187,3 +194,61 @@ def test_claim_correction_agent_falls_back_to_score_correction_when_llm_declines
     assert correction.changed_fields[0].original == "3-1"
     assert correction.changed_fields[0].corrected == "4-1"
     assert correction.evidence_ids == ["E3"]
+
+
+def test_claim_correction_agent_skips_llm_for_score_correction():
+    claim = AtomicClaim(
+        claim_id="C4",
+        claim_text="Belgium beats USA with a 3-1 win in the Round of 16",
+        claim_type=ClaimType.RESULT,
+        subject="Belgium",
+        predicate="beats",
+        object="USA 3-1 Round of 16",
+        confidence=1.0,
+    )
+    evidence = [
+        EvidenceItem(
+            evidence_id="E4",
+            claim_id="C4",
+            source_id="source_fifa",
+            title="USA 1-4 Belgium | Result, Stats & Highlights",
+            evidence_text="USA 1-4 Belgium in the Round of 16 at the FIFA World Cup 2026.",
+            reliability=0.9,
+            independence=0.8,
+            freshness=0.8,
+            specificity=0.95,
+        )
+    ]
+    stances = [
+        StanceResult(
+            claim_id="C4",
+            evidence_id="E4",
+            stance=StanceLabel.CONTRADICTS,
+            confidence=0.9,
+            reason="The evidence reports the same matchup with a 4-1 score.",
+        )
+    ]
+    verdict = PivotVerdict(
+        claim_id="C4",
+        verdict=VerdictLabel.CONTRADICTED,
+        confidence=0.8,
+        support_score=0.0,
+        contradiction_score=0.8,
+        uncertainty_score=0.2,
+        reason="The claim is contradicted by the available evidence.",
+    )
+
+    output = ClaimCorrectionAgent(llm_provider=ExplodingCorrectionProvider()).run(
+        ClaimCorrectionInput(
+            claim=claim,
+            evidence=evidence,
+            stances=stances,
+            verdict=verdict,
+        )
+    )
+
+    assert output.raw_response is None
+    assert output.correction.needs_correction is True
+    assert output.correction.corrected_claim == (
+        "Belgium beats USA with a 4-1 win in the Round of 16"
+    )
