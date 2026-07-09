@@ -252,3 +252,68 @@ def test_claim_correction_agent_skips_llm_for_score_correction():
     assert output.correction.corrected_claim == (
         "Belgium beats USA with a 4-1 win in the Round of 16"
     )
+
+
+def test_claim_correction_agent_skips_llm_for_round_correction():
+    claim = AtomicClaim(
+        claim_id="C5",
+        claim_text="Belgium beats USA with a 4-1 win in the Round of 9 in Worldcup 2026",
+        claim_type=ClaimType.RESULT,
+        subject="Belgium",
+        predicate="beats",
+        object="USA 4-1 Round of 9",
+        confidence=1.0,
+    )
+    evidence = [
+        EvidenceItem(
+            evidence_id="E5",
+            claim_id="C5",
+            source_id="source_news",
+            title="USA soccer's FIFA World Cup run ends with ugly loss vs Belgium",
+            evidence_text=(
+                "USA loses 4-1 in World Cup round of 16 against Belgium, "
+                "ending the Americans' 2026 run."
+            ),
+            reliability=0.9,
+            independence=0.8,
+            freshness=0.8,
+            specificity=0.95,
+        )
+    ]
+    stances = [
+        StanceResult(
+            claim_id="C5",
+            evidence_id="E5",
+            stance=StanceLabel.CONTRADICTS,
+            confidence=0.9,
+            reason="The evidence states the same event with a different round.",
+        )
+    ]
+    verdict = PivotVerdict(
+        claim_id="C5",
+        verdict=VerdictLabel.CONTRADICTED,
+        confidence=0.8,
+        support_score=0.0,
+        contradiction_score=0.8,
+        uncertainty_score=0.2,
+        reason="The claim is contradicted by the available evidence.",
+    )
+
+    output = ClaimCorrectionAgent(llm_provider=ExplodingCorrectionProvider()).run(
+        ClaimCorrectionInput(
+            claim=claim,
+            evidence=evidence,
+            stances=stances,
+            verdict=verdict,
+        )
+    )
+
+    assert output.raw_response is None
+    assert output.correction.needs_correction is True
+    assert output.correction.corrected_claim == (
+        "Belgium beats USA with a 4-1 win in the Round of 16 in Worldcup 2026"
+    )
+    assert output.correction.correction_type == "scope_correction"
+    assert output.correction.changed_fields[0].field == "round"
+    assert output.correction.changed_fields[0].original == "Round of 9"
+    assert output.correction.changed_fields[0].corrected == "Round of 16"

@@ -36,6 +36,7 @@ from app.agents.provided_text_evidence_agent import (
     ProvidedTextEvidenceInput,
 )
 from app.agents.report_agent import ReportAgent, ReportAgentInput
+from app.agents.round_facts import extract_round_fact, infer_round_stance
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
 from app.agents.score_facts import extract_score_fact, infer_score_stance
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
@@ -741,7 +742,7 @@ class InvestigationService:
                         output_data={
                             "stopped": True,
                             "reason": (
-                                "A high-confidence deterministic score stance "
+                                "A high-confidence deterministic structured stance "
                                 "is sufficient for pivot scoring."
                             ),
                         },
@@ -1351,14 +1352,25 @@ class InvestigationService:
         claim: AtomicClaim,
         evidence_items: list[EvidenceItem],
     ) -> list[EvidenceItem]:
-        def score_priority(evidence: EvidenceItem) -> int:
-            stance = infer_score_stance(
+        def structured_priority(evidence: EvidenceItem) -> int:
+            evidence_text = f"{evidence.title or ''}\n{evidence.evidence_text}"
+            score_stance = infer_score_stance(
                 claim_text=claim.claim_text,
-                evidence_text=f"{evidence.title or ''}\n{evidence.evidence_text}",
+                evidence_text=evidence_text,
             )
-            return 0 if stance in {"supports", "contradicts"} else 1
+            if score_stance in {"supports", "contradicts"}:
+                return 0
 
-        return sorted(evidence_items, key=score_priority)
+            round_stance = infer_round_stance(
+                claim_text=claim.claim_text,
+                evidence_text=evidence_text,
+            )
+            if round_stance in {"supports", "contradicts"}:
+                return 0
+
+            return 1
+
+        return sorted(evidence_items, key=structured_priority)
 
     def _has_decisive_score_stance(
         self,
@@ -1366,7 +1378,10 @@ class InvestigationService:
         claim: AtomicClaim,
         stance: StanceResult,
     ) -> bool:
-        if extract_score_fact(claim.claim_text) is None:
+        if (
+            extract_score_fact(claim.claim_text) is None
+            and extract_round_fact(claim.claim_text) is None
+        ):
             return False
 
         stance_label = getattr(stance.stance, "value", str(stance.stance))

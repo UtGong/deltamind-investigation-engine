@@ -159,7 +159,7 @@ def _apply_structured_fact_floor(
 
 def _is_structured_numeric_reason(reason: str) -> bool:
     return (
-        ("score" in reason or "numeric" in reason or "number" in reason)
+        ("score" in reason or "numeric" in reason or "number" in reason or "round" in reason)
         and (
             "same matchup" in reason
             or "same match" in reason

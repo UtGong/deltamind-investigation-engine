@@ -178,6 +178,70 @@ def test_llm_stance_agent_skips_llm_for_non_comparable_score_evidence():
     )
 
 
+def test_llm_stance_agent_skips_llm_for_round_contradiction():
+    claim = AtomicClaim(
+        claim_id="claim_round",
+        claim_text="The match took place in the Round of 9.",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_round",
+        claim_id="claim_round",
+        source_id="source_news",
+        title="USA soccer's FIFA World Cup run ends with ugly loss vs Belgium",
+        evidence_text=(
+            "USA loses 4-1 in World Cup round of 16 against Belgium, "
+            "ending the Americans' 2026 run."
+        ),
+        reliability=0.9,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.95,
+    )
+
+    output = LLMStanceAgent(llm_provider=ExplodingStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.raw_response.provider == "internal_deterministic"
+    assert output.raw_response.model == "round-fact-stance-v1"
+    assert output.raw_response.metadata["llm_used"] is False
+    assert output.stance.stance == StanceLabel.CONTRADICTS
+    assert output.stance.confidence == 0.9
+
+
+def test_llm_stance_agent_skips_llm_for_non_comparable_round_evidence():
+    claim = AtomicClaim(
+        claim_id="claim_round",
+        claim_text="The match took place in the Round of 9.",
+        claim_type=ClaimType.RESULT,
+        confidence=0.9,
+    )
+    evidence = EvidenceItem(
+        evidence_id="evidence_generic",
+        claim_id="claim_round",
+        source_id="source_news",
+        title="Belgium vs USA preview",
+        evidence_text="A preview of the 2026 tournament matchup.",
+        reliability=0.8,
+        independence=0.8,
+        freshness=0.8,
+        specificity=0.5,
+    )
+
+    output = LLMStanceAgent(llm_provider=ExplodingStanceLLMProvider()).run(
+        LLMStanceInput(claim=claim, evidence=evidence)
+    )
+
+    assert output.raw_response.provider == "internal_deterministic"
+    assert output.raw_response.model == "round-claim-fallback-stance-v1"
+    assert output.raw_response.metadata["llm_used"] is False
+    assert output.raw_response.metadata["fallback_reason"] == (
+        "round_claim_without_comparable_round_evidence"
+    )
+
+
 def test_llm_stance_agent_skips_llm_for_score_atom_without_matchup():
     claim = AtomicClaim(
         claim_id="claim_score_fragment",

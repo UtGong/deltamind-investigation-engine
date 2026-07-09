@@ -210,3 +210,44 @@ def test_score_evidence_is_prioritized_and_stops_stance_classification():
     assert prioritized[0].title == "USA 1-4 Belgium | Result, Stats & Highlights"
     assert service._has_decisive_score_stance(claim=claim, stance=stance) is True
 
+
+def test_round_evidence_is_prioritized_and_stops_stance_classification():
+    service = InvestigationService.__new__(InvestigationService)
+    claim = AtomicClaim(
+        claim_id="claim_round",
+        claim_text="The match took place in the Round of 9.",
+        claim_type=ClaimType.RESULT,
+        confidence=0.95,
+    )
+    weak_evidence = EvidenceItem(
+        evidence_id="evidence_weak",
+        claim_id=claim.claim_id,
+        source_id="source_example",
+        title="General preview",
+        url="https://www.example.org/preview",
+        evidence_text="The teams met in the tournament.",
+    )
+    round_evidence = EvidenceItem(
+        evidence_id="evidence_round",
+        claim_id=claim.claim_id,
+        source_id="source_news",
+        title="USA soccer's FIFA World Cup run ends with ugly loss vs Belgium",
+        url="https://www.example.org/match",
+        evidence_text="USA loses 4-1 in World Cup round of 16 against Belgium.",
+    )
+    evidence_items = [weak_evidence, round_evidence]
+
+    prioritized = service._prioritize_evidence_for_stance(
+        claim=claim,
+        evidence_items=evidence_items,
+    )
+    stance = StanceResult(
+        claim_id=claim.claim_id,
+        evidence_id="evidence_round",
+        stance=StanceLabel.CONTRADICTS,
+        confidence=0.9,
+        reason="The evidence states the same event with a different round.",
+    )
+
+    assert prioritized[0].title == "USA soccer's FIFA World Cup run ends with ugly loss vs Belgium"
+    assert service._has_decisive_score_stance(claim=claim, stance=stance) is True

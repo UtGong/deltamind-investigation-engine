@@ -4,6 +4,7 @@ import re
 from pydantic import BaseModel, Field
 
 from app.agents.base import Agent
+from app.agents.round_facts import build_round_correction
 from app.agents.score_facts import build_score_correction
 from app.providers.llm.base import LLMProvider
 from app.providers.llm.mock_provider import MockLLMProvider
@@ -49,6 +50,10 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
         if deterministic_correction is not None:
             return ClaimCorrectionOutput(correction=deterministic_correction)
 
+        deterministic_correction = self._round_correction(input_data)
+        if deterministic_correction is not None:
+            return ClaimCorrectionOutput(correction=deterministic_correction)
+
         request = self._build_request(input_data)
         response = self.llm_provider.generate(request)
         payload = self._safe_json_loads(response.content)
@@ -66,6 +71,12 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
         correction = self._parse_correction(input_data, payload)
         if not correction.needs_correction:
             deterministic_correction = self._score_correction(input_data)
+            if deterministic_correction is not None:
+                return ClaimCorrectionOutput(
+                    correction=deterministic_correction,
+                    raw_response=response,
+                )
+            deterministic_correction = self._round_correction(input_data)
             if deterministic_correction is not None:
                 return ClaimCorrectionOutput(
                     correction=deterministic_correction,
@@ -236,4 +247,39 @@ class ClaimCorrectionAgent(Agent[ClaimCorrectionInput, ClaimCorrectionOutput]):
             confidence=0.9,
             evidence_ids=evidence_ids,
             rationale="Evidence for the same matchup reports a different score.",
+        )
+
+    def _round_correction(self, input_data: ClaimCorrectionInput) -> ClaimCorrection | None:
+        round_correction = build_round_correction(
+            claim_text=input_data.claim.claim_text,
+            evidence_texts=[
+                f"{evidence.title or ''}\n{evidence.evidence_text}"
+                for evidence in input_data.evidence
+            ],
+        )
+        if round_correction is None:
+            return None
+
+        corrected_claim, original_round, corrected_round = round_correction
+        evidence_ids = [
+            stance.evidence_id
+            for stance in input_data.stances
+            if getattr(stance.stance, "value", str(stance.stance)) == "contradicts"
+        ]
+
+        return ClaimCorrection(
+            claim_id=input_data.claim.claim_id,
+            needs_correction=True,
+            corrected_claim=corrected_claim,
+            correction_type="scope_correction",
+            changed_fields=[
+                ClaimCorrectionChange(
+                    field="round",
+                    original=original_round,
+                    corrected=corrected_round,
+                )
+            ],
+            confidence=0.9,
+            evidence_ids=evidence_ids,
+            rationale="Evidence for the same event reports a different round.",
         )
