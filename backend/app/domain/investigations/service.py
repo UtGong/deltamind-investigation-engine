@@ -39,7 +39,7 @@ from app.agents.report_agent import ReportAgent, ReportAgentInput
 from app.agents.search_evidence_agent import SearchEvidenceAgent, SearchEvidenceInput
 from app.agents.score_facts import extract_score_fact, infer_score_stance
 from app.agents.url_fetch_agent import UrlFetchAgent, UrlFetchInput, UrlFetchOutput
-from app.algorithm.pivot.scoring import score_claim
+from app.algorithm.pivot.scoring import PivotThresholds, score_claim
 from app.domain.source_reliability.service import SourceReliabilityService
 from app.domain.source_independence.service import SourceIndependenceService
 from app.algorithm.pivot.evidence_quality import filter_evidence_items
@@ -779,6 +779,7 @@ class InvestigationService:
                 claim_id=claim.claim_id,
                 evidence_items=claim_evidence,
                 stance_results=claim_stances,
+                thresholds=self._pivot_thresholds_for_claim(claim),
             )
             verdicts.append(claim_verdict)
 
@@ -1371,6 +1372,14 @@ class InvestigationService:
 
         stance_label = getattr(stance.stance, "value", str(stance.stance))
         return stance_label in {"supports", "contradicts"} and stance.confidence >= 0.88
+
+    def _pivot_thresholds_for_claim(self, claim: AtomicClaim) -> PivotThresholds:
+        if extract_score_fact(claim.claim_text) is None:
+            return PivotThresholds()
+
+        return PivotThresholds(
+            contradicted_min=0.50,
+        )
 
     def _run_paid_search_recovery(
         self,
